@@ -74,7 +74,7 @@ def sync_alert_to_graph(alert: Alert, log: LogEntry) -> bool:
         "event_type": log.event_type,
         "event_severity": log.severity,
         "timestamp": log.timestamp.isoformat() if log.timestamp else None,
-        "source_platform": log.source_platform,
+        "source_platform": log.platform,
         "alert_id": alert.id,
         "alert_type": alert.alert_type,
         "alert_severity": alert.severity,
@@ -94,12 +94,12 @@ def sync_alert_to_graph(alert: Alert, log: LogEntry) -> bool:
         params["tactic"] = alert.mitre_tactic
 
     ok = graph_client.run_write(query, params)
-    if ok:
-        logger.info(f"Alert {alert.id} synced to graph.")
-    else:
-        logger.warning(f"Alert {alert.id} graph sync failed or skipped (Neo4j unavailable).")
-    return ok
+    if not ok:
+     logger.warning(
+        f"Alert {alert.id} graph sync failed or skipped (Neo4j unavailable)."
+    )
 
+    return ok
 
 # ── Correlation queries ─────────────────────────────────────────────
 # All follow the same shape: find events tied to a shared entity, walk to
