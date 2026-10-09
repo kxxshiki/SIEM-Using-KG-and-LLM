@@ -40,7 +40,8 @@ STATIC_MAPPING: Dict[str, Dict[str, str]] = {
 
     "malware": {"technique_id": "T1204","name": "User Execution","tactic": "Execution","description": ("Malicious content is executed through user interaction ""with a file, link, or other content."),},
 
-    "unauthorized_access": {"technique_id": "T1078","name": "Valid Accounts","tactic": "Initial Access","description": ("Use of legitimate but compromised or misused credentials ""to gain access."
+    "unauthorized_access": {"technique_id": "T1078","name": "Valid Accounts","tactic": "Initial Access","description": ("Use of legitimate but compromised or misused credentials "
+"to gain access."
         ),
     },
 

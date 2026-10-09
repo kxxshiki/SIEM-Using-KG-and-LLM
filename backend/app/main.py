@@ -55,7 +55,6 @@ app.include_router(ml.router, prefix="/api/v1")
 app.include_router(mitre.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
 
-
 @app.on_event("startup")
 def on_startup():
     """

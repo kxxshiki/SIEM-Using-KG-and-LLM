@@ -122,11 +122,67 @@ def parse_windows_csv(content: str, filename: str) -> List[Dict[str, Any]]:
 
     return rows
 
+def parse_network_csv(content: str, filename: str) -> List[Dict[str, Any]]:
+    """Parse network-traffic CSV files while preserving useful fields."""
+    reader = csv.DictReader(io.StringIO(content))
+
+    if not reader.fieldnames:
+        return []
+
+    rows = []
+
+    for row in reader:
+        cleaned = {
+            (key or "").strip().lower().replace("\ufeff", ""): (
+                value.strip() if isinstance(value, str) else value
+            )
+            for key, value in row.items()
+            if key is not None
+        }
+
+        if not any(cleaned.values()):
+            continue
+
+        timestamp_text = (
+            cleaned.get("timestamp")
+            or cleaned.get("datetime")
+            or ""
+        )
+
+        src_ip = cleaned.get("src_ip") or cleaned.get("source_ip") or "0.0.0.0"
+
+        # Preserve the original network fields for downstream analysis.
+        raw_log = " ".join(
+            f"{key}={value}"
+            for key, value in cleaned.items()
+            if value not in (None, "")
+        )
+
+        rows.append({
+            "raw_log": raw_log,
+            "ip_address": src_ip,
+            "username": "unknown",
+            "timestamp": parse_timestamp(str(timestamp_text)),
+            "platform": "Network",
+            "source_file": filename,
+        })
+
+    return rows
+
 
 def parse_file_content(content: str, filename: str) -> List[Dict[str, Any]]:
-    """Parse CSV files structurally; parse other files line by line."""
+    """Parse network and Windows CSVs; parse other files line by line."""
 
     if filename.lower().endswith(".csv"):
+        reader = csv.DictReader(io.StringIO(content))
+        headers = {
+            (header or "").strip().lower().replace("\ufeff", "")
+            for header in (reader.fieldnames or [])
+        }
+
+        if {"src_ip", "dst_ip"}.issubset(headers):
+            return parse_network_csv(content, filename)
+
         return parse_windows_csv(content, filename)
 
     return [

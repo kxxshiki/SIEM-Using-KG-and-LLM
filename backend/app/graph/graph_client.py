@@ -51,15 +51,11 @@ _driver_init_attempted = False
 # AuraDB database name comes from .env / application settings.
 AURA_DATABASE = settings.NEO4J_DATABASE
 
-
 def get_driver():
     """
-    Lazily creates and caches the Neo4j driver.
-
     Returns:
         Neo4j driver if connection succeeds.
         None if Neo4j is unavailable or misconfigured.
-
     This function never raises Neo4j connection errors to the rest
     of the application.
     """
@@ -89,8 +85,7 @@ def get_driver():
         return None
 
     try:
-        # Create the secure Neo4j AuraDB driver.
-        #
+
         # The URI should remain:
         # neo4j+s://...
         #

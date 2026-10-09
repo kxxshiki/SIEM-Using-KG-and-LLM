@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict
-
 
 class LogOut(BaseModel):
     id: int
@@ -21,20 +19,17 @@ class LogOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
 class LogListResponse(BaseModel):
     total: int
     logs: List[LogOut]
 
-
 class LogUploadResponse(BaseModel):
     message: str
-    total: Optional[int] = None
-    saved: Optional[int] = None
-    failed: Optional[int] = None
+    filename: str
+    logs_parsed: int
+    logs_failed: int
     alerts_created: int = 0
-
-
+    
 class LogUploadJobResponse(BaseModel):
     job_id: str
     message: str
