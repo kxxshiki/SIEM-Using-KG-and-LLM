@@ -36,11 +36,7 @@ CONFIRM_THRESHOLD = 75
 FALSE_POSITIVE_THRESHOLD = 30
 
 
-def _clamp(
-    value: float,
-    lo: float = 0,
-    hi: float = 100,
-) -> float:
+def _clamp(value: float,lo: float = 0,hi: float = 100,) -> float:
     return max(lo, min(hi, value))
 
 
@@ -51,27 +47,12 @@ def _build_result(alert: Alert) -> Dict[str, Any]:
     MITRE information is included because Alert exposes the
     mitre_technique relationship through properties.
     """
-    return {
-        "id": alert.id,
-        "alert_type": alert.alert_type,
-        "severity": alert.severity,
-        "status": alert.status,
-        "risk_score": alert.risk_score,
-        "confidence": alert.confidence,
+    return { "id": alert.id, "alert_type": alert.alert_type, "severity": alert.severity,"status": alert.status,"risk_score": alert.risk_score,"confidence": alert.confidence,
 
-        "confidence_score": alert.confidence_score,
-        "investigation_result": alert.investigation_result,
-        "investigation_reason": alert.investigation_reason,
-        "detected_by": alert.detected_by,
-        "related_event_count": alert.related_event_count,
-        "recommended_action": alert.recommended_action,
-        "investigated_by": alert.investigated_by,
-        "investigated_at": alert.investigated_at,
+        "confidence_score": alert.confidence_score,"investigation_result": alert.investigation_result,"investigation_reason": alert.investigation_reason,"detected_by": alert.detected_by,
+        "related_event_count": alert.related_event_count,"recommended_action": alert.recommended_action,"investigated_by": alert.investigated_by,"investigated_at": alert.investigated_at,
 
-        "mitre_technique_id": alert.mitre_technique_id,
-        "mitre_technique_name": alert.mitre_technique_name,
-        "mitre_tactic": alert.mitre_tactic,
-    }
+        "mitre_technique_id": alert.mitre_technique_id, "mitre_technique_name": alert.mitre_technique_name,"mitre_tactic": alert.mitre_tactic, }
 
 
 def _run_ml_recheck(log: LogEntry) -> Dict[str, Any]:
@@ -82,32 +63,18 @@ def _run_ml_recheck(log: LogEntry) -> Dict[str, Any]:
     No training labels are used.
     """
 
-    row = {
-        "timestamp": log.timestamp,
-        "severity": log.severity,
-        "event_type": log.event_type,
-        "raw_log": log.raw_log,
-    }
+    row = {"timestamp": log.timestamp,"severity": log.severity, "event_type": log.event_type, "raw_log": log.raw_log,}
 
     X = build_feature_matrix([row])
 
     is_anomaly, predicted_class, confidence = ml_predict.predict_batch(X)
 
-    return {
-        "is_anomaly": bool(is_anomaly[0]),
-        "predicted_class": int(predicted_class[0]),
-        "ml_confidence": float(confidence[0]),
-    }
+    return {"is_anomaly": bool(is_anomaly[0]),"predicted_class": int(predicted_class[0]),"ml_confidence": float(confidence[0]),}
 
-
-def _correlate(
-    db: Session,
-    log: LogEntry,
-    alert: Alert,
+def _correlate(db: Session,log: LogEntry,alert: Alert,
 ) -> Dict[str, Any]:
     """
     Correlate recent activity from the same source IP.
-
     Looks at:
     - related events
     - distinct event types
@@ -115,11 +82,7 @@ def _correlate(
     """
 
     if not log.ip_address or log.ip_address == "0.0.0.0":
-        return {
-            "related_event_count": 0,
-            "distinct_event_types": 0,
-            "prior_confirmed_threats": 0,
-        }
+        return {"related_event_count": 0, "distinct_event_types": 0, "prior_confirmed_threats": 0,}
 
     window_start = datetime.utcnow() - timedelta(
         hours=CORRELATION_WINDOW_HOURS
@@ -170,29 +133,10 @@ def investigate_alert(
     triggered_by: str = "system",
     force: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Main investigation entry point.
-
-    triggered_by:
-        "system" for automatic investigation
-        analyst username for manual investigation
-
-    force:
-        Re-run an already investigated alert.
-    """
-
-    alert = (
-        db.query(Alert)
-        .filter(Alert.id == alert_id)
-        .first()
-    )
+    alert = ( db.query(Alert) .filter(Alert.id == alert_id) .first())
 
     if not alert:
         raise ValueError(f"Alert {alert_id} not found")
-
-    # ---------------------------------------------------------
-    # Idempotency
-    # ---------------------------------------------------------
 
     if alert.investigated_at is not None and not force:
         logger.debug(
@@ -203,10 +147,6 @@ def investigate_alert(
         )
         return _build_result(alert)
 
-    # ---------------------------------------------------------
-    # Atomic claim
-    # ---------------------------------------------------------
-
     claimed = (
         db.execute(
             update(Alert)
@@ -214,10 +154,7 @@ def investigate_alert(
                 Alert.id == alert_id,
                 Alert.investigated_at.is_(None),
             )
-            .values(
-                status="UNDER_INVESTIGATION",
-            )
-        )
+            .values( status="UNDER_INVESTIGATION",))
         .rowcount
     )
 
@@ -225,20 +162,11 @@ def investigate_alert(
 
     if claimed == 0 and not force:
         db.refresh(alert)
-
-        logger.debug(
-            "Alert %s was claimed by another process — "
-            "returning current state",
-            alert_id,
-        )
-
+        logger.debug( "Alert %s was claimed by another process — ""returning current state",alert_id, )
         return _build_result(alert)
 
     try:
-        # -----------------------------------------------------
-        # Get source log
-        # -----------------------------------------------------
-
+       
         log = (
             db.query(LogEntry)
             .filter(LogEntry.id == alert.log_id)
@@ -247,15 +175,10 @@ def investigate_alert(
 
         if not log:
             alert.status = "UNDER_INVESTIGATION"
-            alert.investigation_reason = (
-                "Source log entry could not be found — "
-                "investigation incomplete."
-            )
+            alert.investigation_reason = ("Source log entry could not be found — ""investigation incomplete.")
             alert.investigated_by = triggered_by
             alert.investigated_at = datetime.utcnow()
-
             db.commit()
-
             logger.warning(
                 "Alert %s: log_id %s missing, "
                 "cannot fully investigate",
@@ -265,25 +188,9 @@ def investigate_alert(
 
             return _build_result(alert)
 
-        # -----------------------------------------------------
-        # ML re-check
-        # -----------------------------------------------------
-
         ml_result = _run_ml_recheck(log)
 
-        # -----------------------------------------------------
-        # Event correlation
-        # -----------------------------------------------------
-
-        correlation = _correlate(
-            db,
-            log,
-            alert,
-        )
-
-        # -----------------------------------------------------
-        # Detection source
-        # -----------------------------------------------------
+        correlation = _correlate(db,log, alert,)
 
         detected_by = (
             "ml_engine"
@@ -295,10 +202,6 @@ def investigate_alert(
             ml_result["is_anomaly"]
             or ml_result["predicted_class"] != 0
         )
-
-        # -----------------------------------------------------
-        # Investigation confidence score
-        # -----------------------------------------------------
 
         score = 0.0
 
@@ -322,22 +225,12 @@ def investigate_alert(
 
         confidence_score = _clamp(score)
 
-        # -----------------------------------------------------
-        # Classification
-        # -----------------------------------------------------
-
         if confidence_score >= CONFIRM_THRESHOLD:
             new_status = "CONFIRMED_THREAT"
 
-            investigation_result = (
-                "Confirmed — corroborated by correlation and/or ML"
-            )
+            investigation_result = ("Confirmed — corroborated by correlation and/or ML")
 
-            recommended_action = (
-                "Block source IP and escalate for remediation"
-                if alert.severity in ("critical", "high")
-                else "Escalate to analyst for review"
-            )
+            recommended_action = ( "Block source IP and escalate for remediation"if alert.severity in ("critical", "high") else "Escalate to analyst for review")
 
         elif (
             confidence_score <= FALSE_POSITIVE_THRESHOLD
@@ -363,10 +256,6 @@ def investigate_alert(
             recommended_action = (
                 "Continue monitoring; manual review recommended"
             )
-
-        # -----------------------------------------------------
-        # Investigation explanation
-        # -----------------------------------------------------
 
         reason_parts = [
             (
@@ -396,10 +285,6 @@ def investigate_alert(
                 f"{correlation['prior_confirmed_threats']} "
                 f"prior confirmed threat(s) on record."
             )
-
-        # -----------------------------------------------------
-        # Persist investigation
-        # -----------------------------------------------------
 
         alert.status = new_status
         alert.confidence_score = round(
@@ -455,13 +340,6 @@ def investigate_alert(
 def investigate_alert_background(
     alert_id: int,
 ) -> None:
-    """
-    FastAPI BackgroundTasks entry point.
-
-    Uses an independent database session because the request's
-    database session may already be closed when the background
-    task executes.
-    """
 
     db = SessionLocal()
 

@@ -35,21 +35,11 @@ router = APIRouter(
 
 logger = logging.getLogger("siem.upload")
 
-
-# ============================================================
-# PERFORMANCE SETTINGS
-# ============================================================
-
 # Larger batches reduce PostgreSQL round trips.
 LOG_BATCH_SIZE = 10000
 
 # Alerts are investigated after the HTTP response is returned.
 INVESTIGATION_BATCH_SIZE = 500
-
-
-# ============================================================
-# LOG UPLOAD
-# ============================================================
 
 @router.post(
     "/upload",
@@ -62,12 +52,7 @@ async def upload_logs(
     current_user: User = Depends(get_current_user),
 ):
    
-
     start_time = time.perf_counter()
-
-    # ========================================================
-    # READ FILE
-    # ========================================================
 
     content_bytes = await file.read()
 
@@ -75,10 +60,6 @@ async def upload_logs(
         content = content_bytes.decode("utf-8")
     except UnicodeDecodeError:
         content = content_bytes.decode("latin-1")
-
-    # ========================================================
-    # STAGE 1 — PARSING
-    # ========================================================
 
     t0 = time.perf_counter()
 
@@ -94,10 +75,6 @@ async def upload_logs(
             status_code=400,
             detail="No parseable log lines found in this file",
         )
-
-    # ========================================================
-    # STAGE 2 — NORMALIZATION
-    # ========================================================
 
     t0 = time.perf_counter()
 
@@ -133,10 +110,6 @@ async def upload_logs(
     ml_engine_time = 0.0
     insert_alerts_time = 0.0
 
-    # ========================================================
-    # STAGE 3 — PROCESS IN LARGE BATCHES
-    # ========================================================
-
     for batch_start in range(
         0,
         len(normalized_rows),
@@ -160,10 +133,7 @@ async def upload_logs(
         )
 
         try:
-            # =================================================
-            # STAGE 3A — BULK INSERT LOGS
-            # =================================================
-
+        
             t0 = time.perf_counter()
 
             stmt = (

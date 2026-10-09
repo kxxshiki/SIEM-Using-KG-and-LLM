@@ -30,62 +30,17 @@ from app.models.mitre_technique import MitreTechnique
 
 STATIC_MAPPING: Dict[str, Dict[str, str]] = {
 
-    "brute_force": {
-        "technique_id": "T1110",
-        "name": "Brute Force",
-        "tactic": "Credential Access",
-        "description": (
-            "Repeated login attempts to guess valid credentials."
-        ),
-    },
+    "brute_force": {"technique_id": "T1110","name": "Brute Force","tactic": "Credential Access","description": ("Repeated login attempts to guess valid credentials."),},
 
-    "sql_injection": {
-        "technique_id": "T1190",
-        "name": "Exploit Public-Facing Application",
-        "tactic": "Initial Access",
-        "description": (
-            "Exploitation of a vulnerability in an internet-facing "
-            "application, such as through malicious SQL input."
-        ),
-    },
+    "sql_injection": {"technique_id": "T1190","name": "Exploit Public-Facing Application","tactic": "Initial Access","description": ("Exploitation of a vulnerability in an internet-facing ""application, such as through malicious SQL input."),},
 
-    "port_scan": {
-        "technique_id": "T1046",
-        "name": "Network Service Discovery",
-        "tactic": "Discovery",
-        "description": (
-            "Probing network ports and services to identify available "
-            "network resources."
-        ),
-    },
+    "port_scan": {"technique_id": "T1046","name": "Network Service Discovery","tactic": "Discovery","description": ("Probing network ports and services to identify available ""network resources."),},
+    
+    "ddos": {"technique_id": "T1498","name": "Network Denial of Service","tactic": "Impact","description": ("Flooding network traffic intended to degrade or deny ""availability of a service."),},
 
-    "ddos": {
-        "technique_id": "T1498",
-        "name": "Network Denial of Service",
-        "tactic": "Impact",
-        "description": (
-            "Flooding network traffic intended to degrade or deny "
-            "availability of a service."
-        ),
-    },
+    "malware": {"technique_id": "T1204","name": "User Execution","tactic": "Execution","description": ("Malicious content is executed through user interaction ""with a file, link, or other content."),},
 
-    "malware": {
-        "technique_id": "T1204",
-        "name": "User Execution",
-        "tactic": "Execution",
-        "description": (
-            "Malicious content is executed through user interaction "
-            "with a file, link, or other content."
-        ),
-    },
-
-    "unauthorized_access": {
-        "technique_id": "T1078",
-        "name": "Valid Accounts",
-        "tactic": "Initial Access",
-        "description": (
-            "Use of legitimate but compromised or misused credentials "
-            "to gain access."
+    "unauthorized_access": {"technique_id": "T1078","name": "Valid Accounts","tactic": "Initial Access","description": ("Use of legitimate but compromised or misused credentials ""to gain access."
         ),
     },
 

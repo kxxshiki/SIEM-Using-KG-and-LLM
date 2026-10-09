@@ -15,17 +15,10 @@ can be processed efficiently.
 
 from typing import Optional, Dict, Any, List, Tuple
 
-from app.core.redis_client import (
-    increment_and_get_count,
-    increment_and_get_counts_batch,
-)
+from app.core.redis_client import ( increment_and_get_count, increment_and_get_counts_batch,)
 from app.services import mitre_mapping_service
 
-
-# ---------------------------------------------------------------------------
 # SIGNATURE RULES
-# ---------------------------------------------------------------------------
-
 SIGNATURE_RULES: Dict[str, Dict[str, Any]] = {
     "brute_force": {
         "alert_type": "Brute Force Attempt",
@@ -69,10 +62,7 @@ SIGNATURE_RULES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-
-# ---------------------------------------------------------------------------
 # THRESHOLD / CORRELATION RULES
-# ---------------------------------------------------------------------------
 
 THRESHOLD_RULES: Dict[str, Dict[str, Any]] = {
     "brute_force": {
@@ -87,10 +77,7 @@ THRESHOLD_RULES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-
-# ---------------------------------------------------------------------------
 # SCORE TO SEVERITY
-# ---------------------------------------------------------------------------
 
 def score_to_severity(score: float) -> str:
     """Convert numeric risk score into severity."""
@@ -106,10 +93,7 @@ def score_to_severity(score: float) -> str:
 
     return "low"
 
-
-# ---------------------------------------------------------------------------
 # ALERT BUILDER
-# ---------------------------------------------------------------------------
 
 def _build_alert(
     normalized: Dict[str, Any],
@@ -149,10 +133,7 @@ def _build_alert(
         "mitre_technique_fk": mitre_technique_fk,
     }
 
-
-# ---------------------------------------------------------------------------
 # SINGLE LOG EVALUATION
-# ---------------------------------------------------------------------------
 
 def evaluate(
     normalized: Dict[str, Any],
