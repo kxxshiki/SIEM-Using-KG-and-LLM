@@ -119,12 +119,15 @@ def evaluate_batch(
         # Step 5: Calculate ML Risk Score
         # -------------------------------------------------------------------
 
-        base_score = min(
-            60 + (conf * 35) + (15 if is_anom else 0),
-            100,
-        )
+       
+        # Step 5: Calculate ML Risk Score
 
-        base_score = float(round(base_score, 2))
+        # Start with the model confidence, then add a smaller
+        # adjustment when Isolation Forest detects an anomaly.
+        base_score = (conf * 70) + (20 if is_anom else 0)
+
+        # Keep the score within the valid 0–100 range.
+        base_score = float(round(min(max(base_score, 0), 100), 2))
 
         # -------------------------------------------------------------------
         # Step 6: Determine Alert Type
@@ -142,46 +145,22 @@ def evaluate_batch(
             else "ml_random_forest"
         )
 
-        # -------------------------------------------------------------------
         # Step 7: MITRE ATT&CK Mapping
-        # -------------------------------------------------------------------
-        #
-        # Known ML classifications such as:
-        #   brute_force
-        #   ddos
-        #   sql_injection
-        #   port_scan
-        #
-        # are mapped through the same cached MITRE service used by
-        # the Rule Engine.
-        #
-        # Unknown / anomalous behavior returns None and can be refined
-        # later by the investigation service.
-
         mitre_technique_fk = (
             mitre_mapping_service.get_db_id_for_event_type(label)
         )
 
-        # -------------------------------------------------------------------
         # Step 8: Build Alert
-        # -------------------------------------------------------------------
 
         alerts.append(
             {
                 "log_id": log_id,
-
                 "alert_type": alert_type,
-
                 "rule_name": rule_name,
-
                 "severity": score_to_severity(base_score),
-
                 "risk_score": base_score,
-
                 "confidence": round(conf, 3),
-
                 "ip_address": row.get("ip_address"),
-
                 "description": (
                     f"ML flagged this as "
                     f"{'an anomaly' if is_anom else f'a {label} pattern'} "

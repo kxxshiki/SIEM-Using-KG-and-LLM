@@ -45,6 +45,9 @@ async def upload_logs(
         start_time = time.perf_counter()
 
         content_bytes = await file.read()
+        
+        logger.info("Uploaded filename: %s", file.filename)
+        logger.info("Uploaded file size: %s bytes", len(content_bytes))
 
         try:
             content = content_bytes.decode("utf-8")

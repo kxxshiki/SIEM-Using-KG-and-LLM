@@ -22,7 +22,7 @@ from app.models.log_entry import LogEntry
 from app.models.alert import Alert
 from app.models.mitre_technique import MitreTechnique
 
-from app.api.v1 import auth, logs, alerts, ml, mitre, graph
+from app.api.v1 import auth, logs, alerts, ml, mitre, graph, dashboard
 from app.core.security import get_password_hash
 from app.services import mitre_mapping_service
 from app.graph import graph_schema
@@ -54,6 +54,7 @@ app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(ml.router, prefix="/api/v1")
 app.include_router(mitre.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
 
 @app.on_event("startup")
 def on_startup():
