@@ -114,7 +114,7 @@ export default function Alerts() {
     setBusyId(alert.id);
     setActionError("");
     try {
-      const res = await api.post<Alert>(`/alerts/${alert.id}/investigate`, { force: true });
+      const res = await api.post<Alert>(`/alerts/${alert.id}/investigate`);
       replaceAlert(res.data);
     } catch (err) {
       setActionError(getErrorMessage(err, "Investigation failed"));

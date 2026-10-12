@@ -20,7 +20,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.redis_client import cache_get, cache_set
 from app.models.alert import Alert
 from app.models.log_entry import LogEntry
-from app.models.user import User
+from app.ml.models.user import User
 from app.schemas.dashboard import DashboardSummary
 
 logger = logging.getLogger("siem.dashboard")
