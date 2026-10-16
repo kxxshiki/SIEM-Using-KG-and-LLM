@@ -1,0 +1,88 @@
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+from app.core.password_policy import password_problems
+from app.core.phone import normalize_phone
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    email: EmailStr
+    phone: str = Field(max_length=32)
+    password: str = Field(max_length=128)
+    confirm_password: str = Field(max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _email_lower(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, v: str) -> str:
+        return normalize_phone(v)
+
+    @model_validator(mode="after")
+    def _passwords(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        problems = password_problems(self.password, username=self.username, email=self.email)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class OtpRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str = Field(max_length=128)
+    confirm_password: str = Field(max_length=128)
+
+    @model_validator(mode="after")
+    def _match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class TokenValidity(BaseModel):
+    valid: bool
+
+
+class RegisterResponse(BaseModel):
+    message: str
+    email_sent: bool
+    verification_token: str
+    next_step: str
+
+
+class VerificationStatus(BaseModel):
+    status: str
+    email_verified: bool
+    phone_verified: bool
+    email_masked: str
+    phone_masked: str
+    next_step: str  # verify_email | verify_phone | done
+
+
+class VerifyResult(BaseModel):
+    verified: bool
+    next_step: str
+    message: str

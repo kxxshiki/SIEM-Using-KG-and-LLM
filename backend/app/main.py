@@ -12,6 +12,7 @@ logging.basicConfig(
 # Hide individual investigation INFO logs
 logging.getLogger("siem.investigation").setLevel(logging.WARNING)
 
+from app.config import settings
 from app.db.postgres import engine, SessionLocal
 from app.db.base import Base
 
@@ -27,6 +28,7 @@ from app.core.security import get_password_hash
 from app.services import mitre_mapping_service
 from app.graph import graph_schema
 
+log = logging.getLogger("siem.startup")
 
 app = FastAPI(
     title="Next-Gen SIEM API",
@@ -34,16 +36,13 @@ app = FastAPI(
 )
 
 
-# CORS Configuration
+# CORS: only the origins listed in CORS_ORIGINS, only the methods/headers we use
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -56,50 +55,56 @@ app.include_router(mitre.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 
+
+def _seed_dev_users(db) -> None:
+    """
+    Create development users ONLY when SEED_DEFAULT_USERS=true, the
+    environment is not production, and a password is set in .env.
+    No password is hardcoded in source code.
+    """
+    if not settings.SEED_DEFAULT_USERS:
+        return
+    if settings.is_production:
+        log.warning("SEED_DEFAULT_USERS ignored in production")
+        return
+
+    seeds = (
+        (settings.ADMIN_USERNAME, settings.ADMIN_PASSWORD,
+         "admin@siem.local", UserRole.admin),
+        (settings.ANALYST_USERNAME, settings.ANALYST_PASSWORD,
+         "analyst@siem.local", UserRole.analyst),
+    )
+    for username, password, email, role in seeds:
+        if not password:
+            log.warning("No password set for seed user '%s'; skipped", username)
+            continue
+        if not db.query(User).filter(User.username == username).first():
+            db.add(
+                User(
+                    username=username,
+                    email=email,
+                    hashed_password=get_password_hash(password),
+                    role=role,
+                )
+            )
+
+
 @app.on_event("startup")
 def on_startup():
     """
-    Initialize database tables, default users, and MITRE ATT&CK mappings.
+    Initialize database tables, optional dev users, and MITRE ATT&CK mappings.
     """
-
-    # Create database tables.
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
-        # Create default admin user
-        if not db.query(User).filter(User.username == "admin").first():
-            db.add(
-                User(
-                    username="admin",
-                    email="admin@siem.local",
-                    hashed_password=get_password_hash("admin123"),
-                    role=UserRole.admin,
-                )
-            )
-
-        # Create default analyst user
-        if not db.query(User).filter(User.username == "analyst").first():
-            db.add(
-                User(
-                    username="analyst",
-                    email="analyst@siem.local",
-                    hashed_password=get_password_hash("analyst123"),
-                    role=UserRole.analyst,
-                )
-            )
-
+        _seed_dev_users(db)
         db.commit()
 
-        # Seed the MITRE ATT&CK reference table and load the
-        # in-memory mapping cache used by the Rule Engine and ML Engine.
-        #
-        # This is idempotent, so it is safe to execute on every startup.
+        # Idempotent (safe to run on every startup)
         mitre_mapping_service.seed_mitre_techniques(db)
     except Exception:
-        logging.getLogger("siem.startup").exception(
-            "Database startup seeding failed unexpectedly"
-        )
+        log.exception("Database startup seeding failed unexpectedly")
     finally:
         db.close()
 
@@ -113,13 +118,9 @@ def on_startup():
 
 @app.get("/")
 def root():
-    return {
-        "message": "Next-Gen SIEM API is running"
-    }
+    return {"message": "Next-Gen SIEM API is running"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
