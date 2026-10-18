@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bell, LayoutDashboard, LogOut, Menu, Moon, Shield, Sun, Upload } from "lucide-react";
+import { Bell, LayoutDashboard, LogOut, Menu, Moon, Shield, Sun, Upload, UserCheck, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+interface NavItem { to: string; label: string; icon: LucideIcon; end: boolean; adminOnly?: boolean }
+
+const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/alerts", label: "Alerts", icon: Bell, end: false },
   { to: "/upload", label: "Upload Logs", icon: Upload, end: false },
+  { to: "/admin/approvals", label: "Approvals", icon: UserCheck, end: false, adminOnly: true },
 ];
 
 export default function AppLayout() {
@@ -94,7 +97,7 @@ export default function AppLayout() {
           Navigation
         </p>
         <nav className="flex-1 space-y-1 px-3">
-          {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+                    {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin").map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

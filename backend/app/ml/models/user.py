@@ -13,6 +13,7 @@ class UserRole(str, enum.Enum):
 
 class UserStatus(str, enum.Enum):
     pending = "pending"
+    awaiting_approval = "awaiting_approval"
     active = "active"
     disabled = "disabled"
 

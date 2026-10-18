@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     OTP_RESEND_COOLDOWN_SECONDS: int = 60
     EMAIL_LINK_TTL_MINUTES: int = 60
     RESET_TOKEN_TTL_MINUTES: int = 30
+    REQUIRE_ADMIN_APPROVAL: bool = True
+    PHONE_DEFAULT_REGION: str = "IN" 
 
     # Rate limits (per window)
     LOGIN_MAX_ATTEMPTS: int = 5

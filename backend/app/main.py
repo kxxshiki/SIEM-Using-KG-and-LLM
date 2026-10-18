@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,7 @@ from app.db.base import Base
 # Import all models so SQLAlchemy registers them before create_all()
 from app.ml.models.user import User, UserRole
 from app.ml.models.audit_log import AuditLog
+from app.models.auth_challenge import AuthChallenge  # noqa: F401
 from app.models.log_entry import LogEntry
 from app.models.alert import Alert
 from app.models.mitre_technique import MitreTechnique
@@ -35,8 +37,7 @@ app = FastAPI(
     version="0.2.0",
 )
 
-
-# CORS: only the origins listed in CORS_ORIGINS, only the methods/headers we use
+# CORS: only origins listed in CORS_ORIGINS, only the methods/headers we use
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -44,7 +45,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
-
 
 # API Routers
 app.include_router(auth.router, prefix="/api/v1")
@@ -58,9 +58,8 @@ app.include_router(dashboard.router, prefix="/api/v1")
 
 def _seed_dev_users(db) -> None:
     """
-    Create development users ONLY when SEED_DEFAULT_USERS=true, the
-    environment is not production, and a password is set in .env.
-    No password is hardcoded in source code.
+    Dev users are created ONLY when SEED_DEFAULT_USERS=true, ENV is not
+    production, and a password is set in .env. No password lives in source code.
     """
     if not settings.SEED_DEFAULT_USERS:
         return
@@ -85,24 +84,22 @@ def _seed_dev_users(db) -> None:
                     email=email,
                     hashed_password=get_password_hash(password),
                     role=role,
+                    status="active",
+                    email_verified_at=datetime.utcnow(),
                 )
             )
 
 
 @app.on_event("startup")
 def on_startup():
-    """
-    Initialize database tables, optional dev users, and MITRE ATT&CK mappings.
-    """
+    """Initialize tables, optional dev users, and MITRE ATT&CK mappings."""
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
         _seed_dev_users(db)
         db.commit()
-
-        # Idempotent (safe to run on every startup)
-        mitre_mapping_service.seed_mitre_techniques(db)
+        mitre_mapping_service.seed_mitre_techniques(db)  # idempotent
     except Exception:
         log.exception("Database startup seeding failed unexpectedly")
     finally:

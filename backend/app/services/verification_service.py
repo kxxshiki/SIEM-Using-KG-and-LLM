@@ -127,7 +127,9 @@ def mark_verified(db: Session, user_id: int, channel: str) -> User:
         user.email_verified_at = now
     if channel == "phone" and not user.phone_verified_at:
         user.phone_verified_at = now
-    if (user.status == UserStatus.pending.value
+        if (user.status == UserStatus.pending.value
             and user.email_verified_at and user.phone_verified_at):
-        user.status = UserStatus.active.value
-    return user
+            user.status = (UserStatus.awaiting_approval.value
+                       if settings.REQUIRE_ADMIN_APPROVAL
+                       else UserStatus.active.value)
+    return user  

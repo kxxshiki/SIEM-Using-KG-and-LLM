@@ -1,42 +1,34 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
-import AppLayout from "@/components/layout/AppLayout";
+import { PublicOnly, RequireAdmin, RequireAuth } from "@/components/routing/guards";
 import Login from "@/pages/Login";
+import Register from "@/pages/Register";
+import VerifyAccount from "@/pages/VerifyAccount";
+import VerifyEmailLink from "@/pages/VerifyEmailLink";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Dashboard from "@/pages/Dashboard";
 import Alerts from "@/pages/Alerts";
 import UploadLogs from "@/pages/UploadLogs";
-
-function FullPageMessage({ text }: { text: string }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-      {text}
-    </div>
-  );
-}
-
-/** Only lets logged-in users through; everyone else is sent to /login. */
-function RequireAuth() {
-  const { user, loading } = useAuth();
-  if (loading) return <FullPageMessage text="Loading…" />;
-  if (!user) return <Navigate to="/login" replace />;
-  return <AppLayout />;
-}
-
-function LoginRoute() {
-  const { user, loading } = useAuth();
-  if (loading) return <FullPageMessage text="Loading…" />;
-  if (user) return <Navigate to="/" replace />;
-  return <Login />;
-}
+import Approvals from "@/pages/Approvals";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginRoute />} />
+      <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+      <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+      <Route path="/verify" element={<PublicOnly><VerifyAccount /></PublicOnly>} />
+      <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
+      {/* Opened from emails; must work even if someone is already signed in */}
+      <Route path="/verify-email" element={<VerifyEmailLink />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/upload" element={<UploadLogs />} />
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin/approvals" element={<Approvals />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

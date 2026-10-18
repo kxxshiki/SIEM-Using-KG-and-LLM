@@ -6,20 +6,23 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from typing import List     
 
 from app.config import settings
 from app.core import limiter
+from app.core.phone import normalize_phone_for_login
 from app.core.password_policy import password_problems
 from app.core.security import (
     DUMMY_HASH, create_access_token, create_verification_token, get_current_user,
-    get_password_hash, get_verifying_user, verify_and_update, verify_password,
+    get_password_hash, get_verifying_user, require_admin, verify_and_update, verify_password,
 )
 from app.db.postgres import get_db
 from app.ml.models.audit_log import AuditLog
 from app.ml.models.user import User, UserRole, UserStatus
 from app.schemas.account import (
-    ForgotPasswordRequest, MessageResponse, OtpRequest, RegisterRequest, RegisterResponse,
-    ResetPasswordRequest, TokenRequest, TokenValidity, VerificationStatus, VerifyResult,
+    ForgotPasswordRequest, MessageResponse, OtpRequest, PendingUserOut, RegisterRequest,
+    RegisterResponse, ResetPasswordRequest, TokenRequest, TokenValidity, VerificationStatus,
+    VerifyResult,
 )
 from app.schemas.auth import Token, UserOut
 from app.services import delivery_service as delivery
@@ -49,6 +52,8 @@ def _next_step(user: User) -> str:
         return "verify_email"
     if not user.phone_verified_at:
         return "verify_phone"
+    if user.status == UserStatus.awaiting_approval.value:
+        return "awaiting_approval"
     return "done"
 
 
@@ -81,13 +86,23 @@ def _issue_and_send_email(db: Session, user: User) -> None:
     delivery.send_email(user.email, subject, text, body)
 
 
+def _canonical_ident(ident: str) -> str:
+    """One stable key per account, so '+91 98765 43210' and '919876543210' share one lockout counter."""
+    phone = normalize_phone_for_login(ident, settings.PHONE_DEFAULT_REGION)
+    return phone if phone else ident.lower()
+
+
 def _find_user(db: Session, ident: str):
     if "@" in ident:
-        stmt = select(User).where(func.lower(User.email) == ident.lower())
-    else:
-        stmt = select(User).where(User.username == ident)
-    return db.execute(stmt).scalar_one_or_none()
-
+        return db.execute(
+            select(User).where(func.lower(User.email) == ident.lower())
+        ).scalar_one_or_none()
+    phone = normalize_phone_for_login(ident, settings.PHONE_DEFAULT_REGION)
+    if phone:
+        user = db.execute(select(User).where(User.phone_e164 == phone)).scalar_one_or_none()
+        if user is not None:
+            return user
+    return db.execute(select(User).where(User.username == ident)).scalar_one_or_none()
 
 # ---------- registration ----------
 @router.post("/register", response_model=RegisterResponse, status_code=201)
@@ -148,7 +163,7 @@ def login(
 ):
     ident = form_data.username.strip()
     ip = _ip(request)
-    acct_key = f"login:fail:acct:{ident.lower()}"
+    acct_key = f"login:fail:acct:{_canonical_ident(ident)}"
     ip_key = f"login:fail:ip:{ip}"
     if (limiter.count(acct_key) >= settings.LOGIN_MAX_ATTEMPTS
             or limiter.count(ip_key) >= settings.LOGIN_MAX_ATTEMPTS * 4):
@@ -173,14 +188,19 @@ def login(
         raise HTTPException(403, detail={"code": "account_disabled",
                                          "message": "This account is disabled."})
     if user.status == UserStatus.pending.value:
-        raise HTTPException(403, detail={
-            "code": "verification_required",
-            "message": "Verify your email and phone to activate this account.",
-            "email_verified": bool(user.email_verified_at),
-            "phone_verified": bool(user.phone_verified_at),
-            "next_step": _next_step(user),
-            "verification_token": create_verification_token(user),
-        })
+       raise HTTPException(403, detail={
+        "code": "verification_required",
+        "message": "Verify your email and phone to activate this account.",
+        "email_verified": bool(user.email_verified_at),
+        "phone_verified": bool(user.phone_verified_at),
+        "next_step": _next_step(user),
+        "verification_token": create_verification_token(user),
+    })
+    if user.status == UserStatus.awaiting_approval.value:
+       raise HTTPException(403, detail={
+        "code": "approval_required",
+        "message": "Your account is verified and waiting for administrator approval.",
+    })
 
     limiter.reset(acct_key)
     if new_hash:                                  # bcrypt -> Argon2id upgrade
@@ -308,8 +328,10 @@ def verify_phone_otp(payload: OtpRequest, request: Request,
         raise HTTPException(400, msg)
     user = vs.mark_verified(db, user.id, "phone")
     db.commit()
+    suffix = {"active": ". Account activated",
+              "awaiting_approval": ". Waiting for administrator approval"}.get(user.status, "")
     return VerifyResult(verified=True, next_step=_next_step(user),
-                        message="Phone verified" + (". Account activated" if user.status == "active" else ""))
+                        message="Phone verified" + suffix)
 
 
 # ---------- password reset ----------
@@ -367,4 +389,49 @@ def reset_password(payload: ResetPasswordRequest, request: Request, db: Session 
     db.commit()
     limiter.reset(f"login:fail:acct:{user.username.lower()}")
     limiter.reset(f"login:fail:acct:{user.email.lower()}")
+    if user.phone_e164:
+       limiter.reset(f"login:fail:acct:{user.phone_e164}")
     return MessageResponse(message="Password updated. You can now log in.")
+
+# ---------- admin approval ----------
+def _locked_user_or_404(db: Session, user_id: int) -> User:
+    user = db.execute(
+        select(User).where(User.id == user_id).with_for_update()
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(404, "User not found")
+    return user
+
+
+@router.get("/admin/pending-users", response_model=List[PendingUserOut])
+def pending_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return db.execute(
+        select(User).where(User.status == UserStatus.awaiting_approval.value)
+        .order_by(User.created_at)
+    ).scalars().all()
+
+
+@router.post("/admin/users/{user_id}/approve", response_model=MessageResponse)
+def approve_user(user_id: int, admin: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    user = _locked_user_or_404(db, user_id)
+    if user.status != UserStatus.awaiting_approval.value:
+        raise HTTPException(409, "Only users awaiting approval can be approved")
+    if not (user.email_verified_at and user.phone_verified_at):
+        raise HTTPException(409, "User has not completed verification")
+    user.status = UserStatus.active.value
+    db.add(AuditLog(user=admin.username, action="user_approved", target=user.username))
+    db.commit()
+    return MessageResponse(message=f"{user.username} approved")
+
+@router.post("/admin/users/{user_id}/reject", response_model=MessageResponse)
+def reject_user(user_id: int, admin: User = Depends(require_admin),
+                db: Session = Depends(get_db)):
+    user = _locked_user_or_404(db, user_id)
+    if user.status not in (UserStatus.awaiting_approval.value, UserStatus.pending.value):
+        raise HTTPException(409, "Only pending users can be rejected")
+    user.status = UserStatus.disabled.value
+    user.token_version += 1
+    db.add(AuditLog(user=admin.username, action="user_rejected", target=user.username))
+    db.commit()
+    return MessageResponse(message=f"{user.username} rejected")

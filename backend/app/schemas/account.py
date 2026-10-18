@@ -1,6 +1,7 @@
 from typing import Optional
+from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.core.password_policy import password_problems
 from app.core.phone import normalize_phone
@@ -32,6 +33,13 @@ class RegisterRequest(BaseModel):
         if problems:
             raise ValueError("; ".join(problems))
         return self
+    
+    @field_validator("username")
+    @classmethod
+    def _username_has_letter(cls, v: str) -> str:
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Username must contain at least one letter")
+        return v
 
 
 class OtpRequest(BaseModel):
@@ -86,3 +94,12 @@ class VerifyResult(BaseModel):
     verified: bool
     next_step: str
     message: str
+    
+class PendingUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    email: str
+    phone_e164: Optional[str] = None
+    created_at: Optional[datetime] = None
