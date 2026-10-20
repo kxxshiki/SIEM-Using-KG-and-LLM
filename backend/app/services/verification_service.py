@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.ml.models.user import User, UserStatus
 from app.models.auth_challenge import AuthChallenge
+from jose import JWTError, jwt
+from app.models.signup_email_code import SignupEmailCode
 
 EMAIL_LINK = "email_link"
 EMAIL_OTP = "email_otp"
@@ -132,4 +134,73 @@ def mark_verified(db: Session, user_id: int, channel: str) -> User:
             user.status = (UserStatus.awaiting_approval.value
                        if settings.REQUIRE_ADMIN_APPROVAL
                        else UserStatus.active.value)
-    return user  
+    return user 
+PHONE_LOGIN = "phone_login"
+EMAIL_PROOF_MINUTES = 30
+
+
+# ---- email codes for people who have no account yet ----
+def _signup_digest(email: str, code: str) -> str:
+    return _digest(f"signup_email:{email}", code)
+
+
+def issue_signup_code(db: Session, email: str) -> str:
+    now = utcnow()
+    db.execute(
+        update(SignupEmailCode)
+        .where(SignupEmailCode.email == email, SignupEmailCode.consumed_at.is_(None))
+        .values(consumed_at=now)
+    )
+    code = f"{secrets.randbelow(10**6):06d}"
+    db.add(SignupEmailCode(
+        email=email, code_hash=_signup_digest(email, code),
+        expires_at=now + timedelta(seconds=settings.OTP_TTL_SECONDS),
+    ))
+    db.flush()
+    return code
+
+
+def verify_signup_code(db: Session, email: str, code: str) -> OtpResult:
+    """On OK the row is marked used but NOT committed; the caller commits."""
+    row = db.execute(
+        select(SignupEmailCode)
+        .where(SignupEmailCode.email == email, SignupEmailCode.consumed_at.is_(None))
+        .order_by(SignupEmailCode.created_at.desc()).limit(1)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if row is None:
+        return OtpResult.expired
+    now = utcnow()
+    if row.expires_at <= now:
+        row.consumed_at = now
+        db.commit()
+        return OtpResult.expired
+    if hmac.compare_digest(row.code_hash, _signup_digest(email, code)):
+        row.consumed_at = now
+        return OtpResult.ok
+    row.attempts += 1
+    locked = row.attempts >= settings.OTP_MAX_ATTEMPTS
+    if locked:
+        row.consumed_at = now
+    db.commit()
+    return OtpResult.locked if locked else OtpResult.invalid
+
+
+def create_email_proof(email: str) -> str:
+    """Signed proof that this email was verified. Cannot be used as a login token."""
+    return jwt.encode(
+        {"scope": "email_proof", "sub": email,
+         "exp": datetime.now(timezone.utc) + timedelta(minutes=EMAIL_PROOF_MINUTES)},
+        settings.SECRET_KEY, algorithm=settings.ALGORITHM,
+    )
+
+
+def read_email_proof(token: str) -> Optional[str]:
+    try:
+        claims = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return None
+    sub = claims.get("sub")
+    if claims.get("scope") != "email_proof" or not isinstance(sub, str):
+        return None
+    return sub 

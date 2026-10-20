@@ -14,6 +14,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
+  loginWithToken: (res: LoginResponse) => void;
   logout: () => void;
 }
 
@@ -70,9 +71,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout]
+    const loginWithToken = useCallback((res: LoginResponse) => {
+    localStorage.setItem(TOKEN_KEY, res.access_token);
+    setUser({ username: res.username, role: res.role });
+  }, []);
+
+    const value = useMemo(
+    () => ({ user, loading, login, loginWithToken, logout }),
+    [user, loading, login, loginWithToken, logout]
   );
 
   return (

@@ -1,6 +1,6 @@
+
 import { useState, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
-
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -12,9 +12,11 @@ interface Props {
   autoComplete: string;
   onBlur?: () => void;
   error?: string;
-  errorAction?: ReactNode;
   describedBy?: string;
   disabled?: boolean;
+  placeholder?: string;
+  labelAction?: ReactNode;
+  errorAction?: ReactNode;
 }
 
 export default function PasswordField({
@@ -25,47 +27,50 @@ export default function PasswordField({
   autoComplete,
   onBlur,
   error,
-  errorAction,
   describedBy,
   disabled,
+  placeholder,
+  labelAction,
+  errorAction,
 }: Props) {
   const [visible, setVisible] = useState(false);
 
   const errorId = `${id}-error`;
-
-  const described = [
-    error ? errorId : "",
-    describedBy ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ") || undefined;
+  const described =
+    [error ? errorId : "", describedBy ?? ""]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        {labelAction}
+      </div>
 
       <div className="relative">
         <Input
           id={id}
           type={visible ? "text" : "password"}
           autoComplete={autoComplete}
+          placeholder={placeholder}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           maxLength={128}
           disabled={disabled}
-          aria-invalid={Boolean(error)}
+          aria-invalid={error ? true : undefined}
           aria-describedby={described}
           className="pr-10"
         />
 
         <button
           type="button"
-          onClick={() => setVisible((previous) => !previous)}
+          onClick={() => setVisible((v) => !v)}
           aria-label={visible ? "Hide password" : "Show password"}
           aria-pressed={visible}
           disabled={disabled}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
         >
           {visible ? (
             <EyeOff size={16} aria-hidden="true" />
@@ -85,11 +90,7 @@ export default function PasswordField({
         </p>
       )}
 
-      {errorAction && (
-        <div className="pt-1">
-          {errorAction}
-        </div>
-      )}
+      {errorAction && <div className="mt-2">{errorAction}</div>}
     </div>
   );
 }

@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     RESET_TOKEN_TTL_MINUTES: int = 30
     REQUIRE_ADMIN_APPROVAL: bool = True
     PHONE_DEFAULT_REGION: str = "IN" 
+    PHONE_LOGIN_ENABLED: bool = True
+    
+    # OAuth (Google / GitHub). Leave a pair empty to disable that provider.
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    OAUTH_STATE_TTL_SECONDS: int = 600
 
     # Rate limits (per window)
     LOGIN_MAX_ATTEMPTS: int = 5

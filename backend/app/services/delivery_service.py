@@ -106,4 +106,22 @@ def reset_email(name: str, link: str) -> Tuple[str, str, str]:
         f"<p>The link works once and expires in {settings.RESET_TOKEN_TTL_MINUTES} minutes.</p>"
         "<p>If you did not request this, ignore this email.</p>"
     )
+    
+    def sms_configured() -> bool:
+      return _dev_console() or bool(settings.MSG91_AUTH_KEY and settings.MSG91_TEMPLATE_ID)
+
+
+def signup_code_email(code: str) -> Tuple[str, str, str]:
+    ttl_min = settings.OTP_TTL_SECONDS // 60
+    subject = "Your SentinelSIEM verification code"
+    text = (
+        "Verify your email to finish creating your account.\n\n"
+        f"Enter this code: {code}  (valid {ttl_min} minutes)\n\n"
+        "If you did not request this, ignore this email."
+    )
+    body = (
+        "<p>Verify your email to finish creating your account.</p>"
+        f"<p>Enter this code: <b style='font-size:20px;letter-spacing:3px'>{code}</b> (valid {ttl_min} min)</p>"
+        "<p>If you did not request this, ignore this email.</p>"
+    )
     return subject, text, body

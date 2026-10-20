@@ -11,6 +11,7 @@ vi.mock("@/context/AuthContext", () => ({
 }));
 vi.mock("@/context/ThemeContext", () => ({ useTheme: () => ({ theme: "dark", toggle: vi.fn() }) }));
 vi.mock("@/components/auth/ParticleNetworkBackground", () => ({ default: () => null }));
+vi.mock("@/components/auth/OAuthButtons", () => ({ default: () => null }));
 vi.mock("@/lib/api", () => ({
   api: { defaults: { baseURL: "http://test/api/v1" }, get: vi.fn(), post: vi.fn() },
   TOKEN_KEY: "siem_token",
@@ -42,21 +43,28 @@ describe("Login page", () => {
     setVerificationToken(null);
   });
 
-  it("starts with empty fields, no placeholders and no demo credentials", () => {
+  it("starts empty: hint text only, no values and no demo credentials", () => {
     renderLogin();
-    const user = screen.getByLabelText("Username, email or phone");
+    const user = screen.getByLabelText("Username");
     const pass = screen.getByLabelText("Password");
     expect(user).toHaveValue("");
     expect(pass).toHaveValue("");
-    expect(user).not.toHaveAttribute("placeholder");
-    expect(pass).not.toHaveAttribute("placeholder");
+    expect(user).toHaveAttribute("placeholder", "Your username");
+    expect(pass).toHaveAttribute("placeholder", "Password");
     expect(screen.queryByText(/admin123|analyst123|dev accounts/i)).toBeNull();
+  });
+
+  it("shows the SentinelSIEM name and the Create an account link", () => {
+    renderLogin();
+    expect(screen.getAllByText(/sentinelsiem/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Create an account" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Forgot Password?" })).toBeInTheDocument();
   });
 
   it("shows validation errors and does not call the backend when empty", async () => {
     renderLogin();
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(screen.getByText("Enter your username, email or phone number.")).toBeInTheDocument();
+    expect(screen.getByText("Enter your username.")).toBeInTheDocument();
     expect(screen.getByText("Enter your password.")).toBeInTheDocument();
     expect(mocks.login).not.toHaveBeenCalled();
   });
@@ -64,7 +72,7 @@ describe("Login page", () => {
   it("sends the trimmed username and the password", async () => {
     mocks.login.mockResolvedValue(undefined);
     renderLogin();
-    await userEvent.type(screen.getByLabelText("Username, email or phone"), "  alice  ");
+    await userEvent.type(screen.getByLabelText("Username"), "  alice  ");
     await userEvent.type(screen.getByLabelText("Password"), "secret-value");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(mocks.login).toHaveBeenCalledWith("alice", "secret-value"));
@@ -73,18 +81,18 @@ describe("Login page", () => {
   it("shows a generic message for a 401", async () => {
     mocks.login.mockRejectedValue(axiosError(401, { detail: "Incorrect username or password" }));
     renderLogin();
-    await userEvent.type(screen.getByLabelText("Username, email or phone"), "alice");
+    await userEvent.type(screen.getByLabelText("Username"), "alice");
     await userEvent.type(screen.getByLabelText("Password"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect username or password.");
   });
 
-  it("sends a pending account to the verification page and keeps the token in memory", async () => {
+  it("sends a pending account to verification and keeps the token in memory only", async () => {
     mocks.login.mockRejectedValue(
       axiosError(403, { detail: { code: "verification_required", message: "x", verification_token: "tok-123" } })
     );
     renderLogin();
-    await userEvent.type(screen.getByLabelText("Username, email or phone"), "alice");
+    await userEvent.type(screen.getByLabelText("Username"), "alice");
     await userEvent.type(screen.getByLabelText("Password"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("verify page")).toBeInTheDocument();
@@ -97,18 +105,9 @@ describe("Login page", () => {
       axiosError(403, { detail: { code: "approval_required", message: "Waiting for administrator approval." } })
     );
     renderLogin();
-    await userEvent.type(screen.getByLabelText("Username, email or phone"), "alice");
+    await userEvent.type(screen.getByLabelText("Username"), "alice");
     await userEvent.type(screen.getByLabelText("Password"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Waiting for administrator approval.");
-  });
-
-    it("sends a phone number exactly as typed (the backend normalises it)", async () => {
-    mocks.login.mockResolvedValue(undefined);
-    renderLogin();
-    await userEvent.type(screen.getByLabelText("Username, email or phone"), "+91 98765 43210");
-    await userEvent.type(screen.getByLabelText("Password"), "secret-value");
-    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith("+91 98765 43210", "secret-value"));
   });
 });

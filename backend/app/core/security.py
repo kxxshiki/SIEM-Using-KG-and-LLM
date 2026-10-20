@@ -21,7 +21,7 @@ pwd_context = CryptContext(
     argon2__time_cost=2,
     argon2__parallelism=2,
 )
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error= True, )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

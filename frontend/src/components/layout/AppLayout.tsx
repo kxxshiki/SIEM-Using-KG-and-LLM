@@ -1,17 +1,49 @@
+
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Bell, LayoutDashboard, LogOut, Menu, Moon, Shield, Sun, Upload, UserCheck, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  LayoutDashboard,
+  Link2,
+  LogOut,
+  Menu,
+  Moon,
+  Shield,
+  Sun,
+  Upload,
+  UserCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
+import Brand from "@/components/Brand";
 
-interface NavItem { to: string; label: string; icon: LucideIcon; end: boolean; adminOnly?: boolean }
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end: boolean;
+  adminOnly?: boolean;
+}
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/alerts", label: "Alerts", icon: Bell, end: false },
   { to: "/upload", label: "Upload Logs", icon: Upload, end: false },
-  { to: "/admin/approvals", label: "Approvals", icon: UserCheck, end: false, adminOnly: true },
+  {
+    to: "/account/connections",
+    label: "Connected accounts",
+    icon: Link2,
+    end: false,
+  },
+  {
+    to: "/admin/approvals",
+    label: "Approvals",
+    icon: UserCheck,
+    end: false,
+    adminOnly: true,
+  },
 ];
 
 export default function AppLayout() {
@@ -43,7 +75,10 @@ export default function AppLayout() {
             <Shield size={15} className="text-white" />
           </div>
           <span className="text-[15px] font-bold tracking-tight">
-            SIEM<span className="bg-gradient-to-r from-primary to-brand-purple bg-clip-text text-transparent">.ai</span>
+            SIEM
+            <span className="bg-gradient-to-r from-primary to-brand-purple bg-clip-text text-transparent">
+              .ai
+            </span>
           </span>
         </div>
 
@@ -70,7 +105,9 @@ export default function AppLayout() {
           <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-purple text-[11px] font-bold text-white">
             {user?.username?.[0]?.toUpperCase()}
           </div>
-          <span className="hidden text-sm font-medium sm:inline">{user?.username}</span>
+          <span className="hidden text-sm font-medium sm:inline">
+            {user?.username}
+          </span>
           <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">
             {user?.role}
           </span>
@@ -96,8 +133,11 @@ export default function AppLayout() {
         <p className="px-5 pb-2 pt-5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Navigation
         </p>
+
         <nav className="flex-1 space-y-1 px-3">
-                    {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin").map(({ to, label, icon: Icon, end }) => (
+          {NAV_ITEMS.filter(
+            (item) => !item.adminOnly || user?.role === "admin"
+          ).map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -117,6 +157,7 @@ export default function AppLayout() {
             </NavLink>
           ))}
         </nav>
+
         <div className="border-t p-3">
           <button
             type="button"

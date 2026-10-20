@@ -1,0 +1,59 @@
+/* SentinelSIEM theme tokens. Loaded AFTER index.css so these values win. */
+:root {
+  --background: 255 40% 99%;
+  --foreground: 255 45% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 255 45% 8%;
+  --primary: 256 85% 52%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 255 40% 95%;
+  --secondary-foreground: 255 45% 12%;
+  --muted: 255 30% 95%;
+  --muted-foreground: 255 12% 38%;
+  --accent: 255 60% 95%;
+  --accent-foreground: 256 70% 35%;
+  --destructive: 0 75% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 255 25% 88%;
+  --input: 255 25% 80%;
+  --ring: 256 85% 55%;
+  --brand-purple: 268 85% 52%;
+  --field: 255 40% 97%;
+}
+
+.dark {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 98%;
+  --card: 255 25% 5%;
+  --card-foreground: 0 0% 98%;
+  --primary: 256 90% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 255 20% 12%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 255 20% 10%;
+  --muted-foreground: 255 12% 66%;
+  --accent: 255 30% 14%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 72% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 255 18% 16%;
+  --input: 230 25% 22%;
+  --ring: 256 95% 70%;
+  --brand-purple: 268 90% 68%;
+  --field: 225 40% 8%;
+}
+
+/* Sign-in and sign-up pages: dark navy fields like the reference design */
+.auth-page input,
+.auth-page select {
+  background-color: hsl(var(--field));
+  border-color: hsl(var(--input));
+}
+.auth-page input:focus-visible,
+.auth-page select:focus-visible {
+  border-color: hsl(var(--ring));
+}
+.auth-page label {
+  font-family: Poppins, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}

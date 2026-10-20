@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { api } from "@/lib/api";
+import type { LoginResponse } from "@/types";
 
 export type NextStep = "verify_email" | "verify_phone" | "awaiting_approval" | "done";
 
@@ -10,10 +11,10 @@ export interface RegisterInput {
   phone: string;
   password: string;
   confirm_password: string;
+  email_proof: string;
 }
 export interface RegisterResult {
   message: string;
-  email_sent: boolean;
   verification_token: string;
   next_step: NextStep;
 }
@@ -219,5 +220,79 @@ export async function approveUser(id: number): Promise<MessageResult> {
 }
 export async function rejectUser(id: number): Promise<MessageResult> {
   const res = await api.post<MessageResult>(`/auth/admin/users/${id}/reject`);
+  return res.data;
+}
+
+// ---------- register page: prove the email first ----------
+export async function sendSignupEmailCode(email: string): Promise<MessageResult> {
+  const res = await client.post<MessageResult>("/auth/register/send-email-code", { email });
+  return res.data;
+}
+
+export async function verifySignupEmailCode(
+  email: string,
+  code: string
+): Promise<{ email_proof: string; expires_in: number }> {
+  const res = await client.post<{ email_proof: string; expires_in: number }>(
+    "/auth/register/verify-email-code",
+    { email, code }
+  );
+  return res.data;
+}
+
+// ---------- sign-in options and SMS sign-in ----------
+export interface AuthOptions {
+  google: boolean;
+  github: boolean;
+  phone_login: boolean;
+}
+
+export async function getAuthOptions(): Promise<AuthOptions> {
+  const res = await client.get<AuthOptions>("/auth/options");
+  return res.data;
+}
+
+export async function sendPhoneLoginCode(phone: string): Promise<MessageResult> {
+  const res = await client.post<MessageResult>("/auth/phone-login/send", { phone });
+  return res.data;
+}
+
+export async function verifyPhoneLoginCode(phone: string, code: string): Promise<LoginResponse> {
+  const res = await client.post<LoginResponse>("/auth/phone-login/verify", { phone, code });
+  return res.data;
+}
+
+// ---------- Google / GitHub sign-in ----------
+export type OAuthProvider = "google" | "github";
+export interface OAuthIdentity {
+  provider: OAuthProvider;
+  email: string | null;
+}
+
+export async function getOAuthProviders(): Promise<Record<OAuthProvider, boolean>> {
+  const res = await client.get<Record<OAuthProvider, boolean>>("/auth/oauth/providers");
+  return res.data;
+}
+
+/** The browser must NAVIGATE to this URL (not fetch it), so the provider can take over. */
+export function oauthStartUrl(provider: OAuthProvider, linkTicket?: string): string {
+  const base = new URL(api.defaults.baseURL ?? "/api/v1", window.location.origin);
+  const url = new URL(`${base.pathname.replace(/\/$/, "")}/auth/oauth/${provider}/start`, base.origin);
+  if (linkTicket) url.searchParams.set("link_ticket", linkTicket);
+  return url.toString();
+}
+
+export async function exchangeOAuthCode(code: string): Promise<LoginResponse> {
+  const res = await client.post<LoginResponse>("/auth/oauth/exchange", { token: code });
+  return res.data;
+}
+
+export async function createLinkTicket(provider: OAuthProvider): Promise<string> {
+  const res = await api.post<{ ticket: string }>(`/auth/oauth/${provider}/link-ticket`);
+  return res.data.ticket;
+}
+
+export async function listIdentities(): Promise<OAuthIdentity[]> {
+  const res = await api.get<OAuthIdentity[]>("/auth/oauth/identities");
   return res.data;
 }

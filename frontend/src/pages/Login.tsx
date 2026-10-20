@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import AuthShell from "@/components/auth/AuthShell";
+import OAuthButtons from "@/components/auth/OAuthButtons";
 import PasswordField from "@/components/auth/PasswordField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +28,7 @@ export default function Login() {
     if (busy.current) return; // blocks double submits
 
     const name = username.trim();
-    const uErr = name ? "" : "Enter your username, email or phone number.";
+    const uErr = name ? "" : "Enter your username.";
     const pErr = password ? "" : "Enter your password.";
     setUsernameError(uErr);
     setPasswordError(pErr);
@@ -61,12 +62,13 @@ export default function Login() {
 
   return (
     <AuthShell
-      title="Sign in"
+      title="Back in Action"
+      subtitle="Your security dashboard is ready."
       footer={
         <>
-          New here?{" "}
-          <Link to="/register" className="font-medium text-primary hover:underline">
-            Create account
+          New to SentinelSIEM?{" "}
+          <Link to="/register" className="font-semibold text-brand-purple hover:underline">
+            Create an account
           </Link>
         </>
       }
@@ -84,12 +86,13 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="login-username">Username or email</Label>
+          <Label htmlFor="login-username">Username</Label>
           <Input
             id="login-username"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
+            placeholder="Your username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             disabled={submitting}
@@ -103,33 +106,28 @@ export default function Login() {
           )}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="login-username">Username, email or phone</Label>
-          <Input
-            id="login-username"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={submitting}
-            aria-invalid={usernameError ? true : undefined}
-            aria-describedby={["login-username-hint", usernameError ? "login-username-error" : ""].filter(Boolean).join(" ")}
-          />
-          <p id="login-username-hint" className="text-xs text-muted-foreground">
-            Phone numbers: include the country code, for example +91.
-          </p>
-          {usernameError && (
-            <p id="login-username-error" role="alert" className="text-xs text-red-600 dark:text-red-400">
-              {usernameError}
-            </p>
-          )}
-        </div>
+        <PasswordField
+          id="login-password"
+          label="Password"
+          placeholder="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          error={passwordError}
+          disabled={submitting}
+          labelAction={
+            <Link to="/forgot-password" className="text-xs font-semibold text-brand-purple hover:underline">
+              Forgot Password?
+            </Link>
+          }
+        />
 
-        <Button type="submit" variant="gradient" className="w-full" disabled={submitting}>
+        <Button type="submit" className="h-11 w-full text-base font-semibold" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>
+
+      <OAuthButtons />
     </AuthShell>
   );
 }

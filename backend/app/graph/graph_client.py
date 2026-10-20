@@ -1,138 +1,82 @@
-"""
-Neo4j AuraDB connection layer.
-
-Every function here is BEST-EFFORT:
-if Neo4j is unreachable, misconfigured, or credentials are blank,
-functions return a safe default (None/False) instead of raising.
-
-Neo4j failure must never break the rest of the SIEM.
-
-The SSL certificate configuration is handled automatically using
-the certifi CA bundle, so the application does not require the
-operator/developer to manually set SSL_CERT_FILE in PowerShell.
-"""
-
 import logging
 import os
 from typing import Optional, List, Dict, Any
 
 import certifi
 from neo4j import GraphDatabase, basic_auth
+from neo4j.exceptions import Neo4jError
 
 from app.config import settings
 
-
-# ---------------------------------------------------------------------------
-# Automatic SSL certificate configuration
-# ---------------------------------------------------------------------------
-# Neo4j AuraDB uses a secure TLS connection (neo4j+s://).
-# On this Windows/Python environment, Python may not automatically locate
-# the CA certificates required to verify the AuraDB certificate.
-#
-# certifi provides a maintained CA bundle.
-#
-# setdefault() means:
-# - If SSL_CERT_FILE is already configured by the deployment environment,
-#   we respect that configuration.
-# - Otherwise, we automatically use certifi's CA bundle.
-#
-# This removes the need to manually run:
-#   $env:SSL_CERT_FILE = ...
-#
-# before starting FastAPI.
+# Configure certificates for secure Neo4j Aura connections.
 os.environ.setdefault("SSL_CERT_FILE", certifi.where())
-
 
 logger = logging.getLogger("siem.graph")
 
 _driver = None
 _driver_init_attempted = False
 
-# AuraDB database name comes from .env / application settings.
-AURA_DATABASE = settings.NEO4J_DATABASE
+AURA_DATABASE = getattr(settings, "NEO4J_DATABASE", None) or "neo4j"
+
 
 def get_driver():
     """
-    Returns:
-        Neo4j driver if connection succeeds.
-        None if Neo4j is unavailable or misconfigured.
-    This function never raises Neo4j connection errors to the rest
-    of the application.
+    Return a cached Neo4j driver after verifying connectivity.
+    Return None if configuration or connection is unavailable.
     """
     global _driver, _driver_init_attempted
 
-    # Reuse an already-created driver.
     if _driver is not None:
         return _driver
 
-    # Do not repeatedly attempt a known failed connection during
-    # the same application lifetime.
     if _driver_init_attempted:
         return None
 
     _driver_init_attempted = True
 
-    # Check that Neo4j configuration exists.
-    if not (
-        settings.NEO4J_URI
-        and settings.NEO4J_USER
-        and settings.NEO4J_PASSWORD
-    ):
+    uri = settings.NEO4J_URI
+    username = settings.NEO4J_USER
+    password = settings.NEO4J_PASSWORD
+
+    if not all((uri, username, password)):
         logger.warning(
-            "Neo4j credentials not configured (.env) — "
-            "graph features disabled, everything else unaffected."
+            "Neo4j settings are incomplete. Graph features are disabled."
         )
         return None
 
-    try:
+    driver = None
 
-        # The URI should remain:
-        # neo4j+s://...
-        #
-        # SSL certificate verification remains enabled.
-        # The CA bundle is configured automatically above using certifi.
+    try:
         driver = GraphDatabase.driver(
-            settings.NEO4J_URI,
-            auth=basic_auth(
-                settings.NEO4J_USER,
-                settings.NEO4J_PASSWORD,
-            ),
+            uri,
+            auth=basic_auth(username, password),
+            max_connection_pool_size=20,
+            connection_acquisition_timeout=10,
         )
 
-        # Verify the connection immediately so that a bad connection
-        # does not get stored as a working driver.
         driver.verify_connectivity()
 
         _driver = driver
-
         logger.info(
-            "Connected to Neo4j AuraDB successfully."
+            "Neo4j connection verified successfully. Database: %s",
+            AURA_DATABASE,
         )
-
         return _driver
 
     except Exception:
-        logger.exception(
-            "Could not connect to Neo4j AuraDB — "
-            "graph features disabled, everything else unaffected."
-        )
+        logger.exception("Neo4j connection failed.")
 
-        # Make sure a partially created driver is not retained.
-        try:
-            if "driver" in locals():
+        if driver is not None:
+            try:
                 driver.close()
-        except Exception:
-            pass
+            except Exception:
+                logger.exception("Failed to close unsuccessful driver.")
 
         return None
 
 
 def is_available() -> bool:
-    """
-    Returns True if Neo4j is currently available.
-
-    Returns False instead of raising if Neo4j is unavailable.
-    """
+    """Return whether a Neo4j connection can be initialized."""
     return get_driver() is not None
 
 
@@ -141,13 +85,9 @@ def run_write(
     params: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
-    Executes a Neo4j write query.
+    Execute a write query and commit the transaction.
 
-    Returns:
-        True  -> query executed successfully
-        False -> Neo4j unavailable or query failed
-
-    Never raises Neo4j errors to the application.
+    Returns True on success and False on failure.
     """
     driver = get_driver()
 
@@ -156,15 +96,17 @@ def run_write(
 
     try:
         with driver.session(database=AURA_DATABASE) as session:
-            session.run(query, params or {})
+            session.execute_write(
+                lambda tx: tx.run(query, params or {}).consume()
+            )
 
         return True
 
+    except Neo4jError:
+        logger.exception("Neo4j write query failed.")
+        return False
     except Exception:
-        logger.exception(
-            "Neo4j write failed — "
-            "continuing without graph sync for this operation."
-        )
+        logger.exception("Unexpected error during Neo4j write.")
         return False
 
 
@@ -173,13 +115,10 @@ def run_read(
     params: Optional[Dict[str, Any]] = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """
-    Executes a Neo4j read query.
+    Execute a read query.
 
-    Returns:
-        List of dictionaries on success.
-        None if Neo4j is unavailable or the query fails.
-
-    Never raises Neo4j errors to the application.
+    Returns a list of dictionaries, or None on failure.
+    An empty list means the query succeeded but returned no records.
     """
     driver = get_driver()
 
@@ -188,38 +127,31 @@ def run_read(
 
     try:
         with driver.session(database=AURA_DATABASE) as session:
-            result = session.run(query, params or {})
+            result = session.execute_read(
+                lambda tx: list(tx.run(query, params or {}).data())
+            )
 
-            return [
-                record.data()
-                for record in result
-            ]
+        return result
 
+    except Neo4jError:
+        logger.exception("Neo4j read query failed.")
+        return None
     except Exception:
-        logger.exception(
-            "Neo4j read failed."
-        )
+        logger.exception("Unexpected error during Neo4j read.")
         return None
 
 
 def close_driver() -> None:
-    """
-    Safely closes the cached Neo4j driver.
-
-    Used when the application shuts down.
-    """
+    """Close the cached driver during application shutdown."""
     global _driver, _driver_init_attempted
 
-    if _driver is not None:
-        try:
-            _driver.close()
-        except Exception:
-            logger.exception(
-                "Error while closing Neo4j driver."
-            )
-        finally:
-            _driver = None
-
-    # Allow a fresh connection attempt if the application code
-    # ever reuses this module after closing the driver.
+    driver = _driver
+    _driver = None
     _driver_init_attempted = False
+
+    if driver is not None:
+        try:
+            driver.close()
+            logger.info("Neo4j driver closed.")
+        except Exception:
+            logger.exception("Error while closing Neo4j driver.")

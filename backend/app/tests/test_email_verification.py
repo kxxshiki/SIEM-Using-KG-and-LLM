@@ -6,12 +6,18 @@ from app.core import limiter
 from app.main import app
 from app.tests.helpers import (API, bearer, challenges, expire_challenges, get_user, login,
                            register, wrong_code)
+from tests.helpers import (API, GOOD_PW, PHONE, bearer, challenges, expire_challenges, get_user,
+                           login, make_user, wrong_code)
 
 EMAIL = "alice@example.com"
 
 
 def _signup(client):
-    return register(client).json()["verification_token"]
+    """A pending account whose email is NOT verified yet (for example an older account)."""
+    make_user("alice", status="pending", email=EMAIL, phone=PHONE)
+    tok = login(client, "alice", GOOD_PW).json()["detail"]["verification_token"]
+    assert client.post(f"{API}/resend-email", headers=bearer(tok)).status_code == 200
+    return tok
 
 
 def _otp(client, tok, code):

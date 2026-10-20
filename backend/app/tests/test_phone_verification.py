@@ -8,13 +8,12 @@ from app.core import limiter
 from app.services import delivery_service as delivery
 from app.tests.helpers import (API, GOOD_PW, bearer, challenges, complete_signup, expire_challenges,
                            get_user, login, register, wrong_code)
+from tests.helpers import (API, GOOD_PW, PHONE, bearer, challenges, complete_signup,
+                           expire_challenges, get_user, login, make_user, register, wrong_code)
 
 
 def _email_verified_signup(client, outbox):
-    tok = register(client).json()["verification_token"]
-    client.post(f"{API}/verify-email-otp", json={"code": outbox.email_code("alice@example.com")},
-                headers=bearer(tok))
-    return tok
+    return register(client).json()["verification_token"]   # email is already verified now
 
 
 def _send(client, tok):
@@ -26,7 +25,8 @@ def _verify(client, tok, code):
 
 
 def test_phone_step_requires_verified_email(client, outbox):
-    tok = register(client).json()["verification_token"]
+    make_user("alice", status="pending", email="alice@example.com", phone=PHONE)
+    tok = login(client, "alice", GOOD_PW).json()["detail"]["verification_token"]
     assert _send(client, tok).status_code == 409
     assert _verify(client, tok, "123456").status_code == 409
     assert outbox.sms == []

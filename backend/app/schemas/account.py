@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
     phone: str = Field(max_length=32)
     password: str = Field(max_length=128)
     confirm_password: str = Field(max_length=128)
+    email_proof: str = Field(min_length=20, max_length=2000)
 
     @field_validator("email")
     @classmethod
@@ -76,7 +77,6 @@ class TokenValidity(BaseModel):
 
 class RegisterResponse(BaseModel):
     message: str
-    email_sent: bool
     verification_token: str
     next_step: str
 
@@ -103,3 +103,40 @@ class PendingUserOut(BaseModel):
     email: str
     phone_e164: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def _lower(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class SignupCodeVerify(EmailRequest):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class EmailProofResponse(BaseModel):
+    email_proof: str
+    expires_in: int
+
+
+class PhoneLoginSend(BaseModel):
+    phone: str = Field(max_length=32)
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, v: str) -> str:
+        return normalize_phone(v)
+
+
+class PhoneLoginVerify(PhoneLoginSend):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class AuthOptions(BaseModel):
+    google: bool
+    github: bool
+    phone_login: bool

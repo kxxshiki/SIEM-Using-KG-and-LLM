@@ -18,21 +18,26 @@ interface Palette {
 }
 
 const PALETTES: Record<"dark" | "light", Palette> = {
-  dark: { dot: "34, 211, 238", line: "56, 189, 248", dotAlpha: 0.75, lineAlpha: 0.28, glow: 8 },
-  light: { dot: "37, 99, 235", line: "59, 130, 246", dotAlpha: 0.55, lineAlpha: 0.22, glow: 0 },
+  dark: { dot: "167, 139, 250", line: "139, 92, 246", dotAlpha: 0.8, lineAlpha: 0.3, glow: 8 },
+  light: { dot: "109, 40, 217", line: "124, 58, 237", dotAlpha: 0.55, lineAlpha: 0.22, glow: 0 },
 };
 
-/** Decorative moving-dots-and-lines effect. The parent element must be `relative`. */
-export default function ParticleNetworkBackground({ className }: { className?: string }) {
+/** Always-moving network of dots and lines. The parent element must be `relative`. */
+interface ParticleNetworkBackgroundProps {
+  className?: string;
+  animate?: boolean;
+}
+
+export default function ParticleNetworkBackground({
+  className,
+  animate = true,
+}: ParticleNetworkBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { theme } = useTheme();
   const themeRef = useRef<"dark" | "light">(theme);
-  const redrawRef = useRef<(() => void) | null>(null);
 
-  // Theme changes only swap colours; no re-initialisation, no re-render of the canvas.
   useEffect(() => {
-    themeRef.current = theme;
-    redrawRef.current?.();
+    themeRef.current = theme; // colours are read on every frame; no restart needed
   }, [theme]);
 
   useEffect(() => {
@@ -42,7 +47,13 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     const host = canvas.parentElement ?? canvas;
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let reduced = motionQuery.matches;
+    if (!animate) {
+  const pal = PALETTES[themeRef.current];
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  return;
+}
+    // Always animated. If the computer asks for reduced motion, move gently instead of stopping.
+    let speed = motionQuery.matches ? 0.35 : 1;
     let width = 1;
     let height = 1;
     let linkDist = 140;
@@ -113,8 +124,8 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     const step = (dt: number) => {
       for (const p of particles) {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
+        p.x += p.vx * dt * speed;
+        p.y += p.vy * dt * speed;
         if (p.x < 0 || p.x > width) {
           p.vx *= -1;
           p.x = Math.min(Math.max(p.x, 0), width);
@@ -128,14 +139,14 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     const frame = (t: number) => {
       raf = requestAnimationFrame(frame);
-      if (t - last < 33) return; // cap at about 30 frames per second to save CPU
+      if (t - last < 33) return; // about 30 frames per second keeps CPU use low
       const dt = Math.min((t - last) / 1000, 0.1);
       last = t;
       step(dt);
       draw();
     };
     const start = () => {
-      if (running || reduced || document.hidden) return;
+      if (running || document.hidden) return;
       running = true;
       last = performance.now();
       raf = requestAnimationFrame(frame);
@@ -147,13 +158,7 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     const onVisibility = () => (document.hidden ? stop() : start());
     const onMotion = () => {
-      reduced = motionQuery.matches;
-      if (reduced) {
-        stop();
-        draw(); // one still frame
-      } else {
-        start();
-      }
+      speed = motionQuery.matches ? 0.35 : 1;
     };
     const onResize = () => {
       resize();
@@ -162,7 +167,6 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     resize();
     draw();
-    redrawRef.current = draw;
     start();
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -177,13 +181,12 @@ export default function ParticleNetworkBackground({ className }: { className?: s
 
     return () => {
       stop();
-      redrawRef.current = null;
       document.removeEventListener("visibilitychange", onVisibility);
       motionQuery.removeEventListener("change", onMotion);
       window.removeEventListener("resize", onResize);
       observer?.disconnect();
     };
-  }, []);
+  }, [animate]);
 
   return (
     <canvas

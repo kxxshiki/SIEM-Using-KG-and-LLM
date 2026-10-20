@@ -36,6 +36,7 @@ from app.db.postgres import engine  # noqa: E402
 from app.main import app  # noqa: E402  (also registers every model)
 from app.services import delivery_service as delivery  # noqa: E402
 from app.tests.helpers import Outbox  # noqa: E402
+from tests import helpers
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -60,7 +61,8 @@ def _fast_hashing():
 @pytest.fixture(autouse=True)
 def _clean():
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE auth_challenges, users RESTART IDENTITY CASCADE"))
+                conn.execute(text(
+            "TRUNCATE TABLE auth_challenges, signup_email_codes, users RESTART IDENTITY CASCADE"))
     limiter._mem.clear()
     limiter._client = None
     yield
@@ -87,5 +89,7 @@ def outbox(monkeypatch):
 
     monkeypatch.setattr(delivery, "send_email", fake_email)
     monkeypatch.setattr(delivery, "send_sms_otp", fake_sms)
-    return box
+    helpers.ACTIVE_OUTBOX = box
+    yield box
+    helpers.ACTIVE_OUTBOX = None
 
