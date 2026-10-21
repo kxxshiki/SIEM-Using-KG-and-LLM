@@ -1,3 +1,4 @@
+
 from functools import lru_cache
 from typing import List, Literal
 
@@ -51,8 +52,9 @@ class Settings(BaseSettings):
 
     # SMS (MSG91)
     MSG91_AUTH_KEY: str = ""
-    MSG91_TEMPLATE_ID: str = ""   # DLT-approved OTP template
-    MSG91_SENDER_ID: str = ""     # DLT-registered sender ID
+    MSG91_TEMPLATE_ID: str = ""  # DLT-approved OTP template
+    MSG91_SENDER_ID: str = ""  # DLT-registered sender ID
+
     # Dev only: print OTP to server console instead of sending SMS/email
     DEV_CONSOLE_DELIVERY: bool = False
 
@@ -63,9 +65,9 @@ class Settings(BaseSettings):
     EMAIL_LINK_TTL_MINUTES: int = 60
     RESET_TOKEN_TTL_MINUTES: int = 30
     REQUIRE_ADMIN_APPROVAL: bool = True
-    PHONE_DEFAULT_REGION: str = "IN" 
+    PHONE_DEFAULT_REGION: str = "IN"
     PHONE_LOGIN_ENABLED: bool = True
-    
+
     # OAuth (Google / GitHub). Leave a pair empty to disable that provider.
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
@@ -76,6 +78,15 @@ class Settings(BaseSettings):
     # Rate limits (per window)
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_WINDOW_SECONDS: int = 300
+
+    # Data visibility scope
+    # session = uploads made during the current sign-in
+    # user    = all uploads belonging to the signed-in user
+    # all     = everything in the database
+    DATA_SCOPE: Literal["session", "user", "all"] = "session"
+
+    # Dashboard summary cache duration, in seconds
+    SUMMARY_CACHE_SECONDS: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -89,35 +100,49 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        return [
+            origin.strip()
+            for origin in self.CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     @model_validator(mode="after")
     def _enforce_production_safety(self):
         if not self.is_production:
             return self
+
         problems = []
-        if self.SECRET_KEY in INSECURE_SECRETS or len(self.SECRET_KEY) < 32:
-            problems.append("SECRET_KEY must be a random value of 32+ characters")
+
+        if (
+            self.SECRET_KEY in INSECURE_SECRETS
+            or len(self.SECRET_KEY) < 32
+        ):
+            problems.append(
+                "SECRET_KEY must be a random value of 32+ characters"
+            )
+
         if not self.REDIS_ENABLED:
-            problems.append("REDIS_ENABLED must be true (needed for rate limiting)")
+            problems.append(
+                "REDIS_ENABLED must be true (needed for rate limiting)"
+            )
+
         if self.DEV_CONSOLE_DELIVERY:
             problems.append("DEV_CONSOLE_DELIVERY must be false")
+
         if self.SEED_DEFAULT_USERS:
             problems.append("SEED_DEFAULT_USERS must be false")
+
         if problems:
-            raise ValueError("Unsafe production config: " + "; ".join(problems))
+            raise ValueError(
+                "Unsafe production config: " + "; ".join(problems)
+            )
+
         return self
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-    # What the dashboard, alerts and logs pages show:
-    #   session = only uploads made in the current sign-in (every fresh sign-in starts empty)
-    #   user    = every upload made by the signed-in user
-    #   all     = everything in the database (old behaviour)
-    DATA_SCOPE: Literal["session", "user", "all"] = "session"
-    SUMMARY_CACHE_SECONDS: int = 30
 
 
 settings = get_settings()

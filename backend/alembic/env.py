@@ -7,13 +7,33 @@ from sqlalchemy import engine_from_config, pool
 from app.config import settings
 from app.db.base import Base
 
-# Register the existing SQLAlchemy models.
+# Register SQLAlchemy models so Alembic can discover their metadata.
 from app.ml.models.user import User
 from app.ml.models.audit_log import AuditLog
+
 from app.models.alert import Alert
 from app.models.auth_challenge import AuthChallenge
 from app.models.log_entry import LogEntry
 from app.models.mitre_technique import MitreTechnique
+from app.models.upload import Upload
+
+# Import these models if these files/classes exist in your project.
+# They were previously reported as existing tables by Alembic.
+try:
+    from app.models.auth_challenge import OTPLoginChallenge
+except ImportError:
+    OTPLoginChallenge = None
+
+try:
+    from app.models.auth_challenge import SignupEmailCode
+except ImportError:
+    SignupEmailCode = None
+
+try:
+    from app.models.oauth_identity import OAuthIdentity
+except ImportError:
+    OAuthIdentity = None
+
 
 config = context.config
 
@@ -30,6 +50,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
+
     context.configure(
         url=url,
         target_metadata=target_metadata,

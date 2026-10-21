@@ -19,8 +19,16 @@ export interface Alert {
 }
 
 export interface AlertDashboardStats {
+  isLogsUploaded: boolean;
   summaryPercentage: number;
   summaryTrend: number;
+  sources: {
+    aws: number;
+    azure: number;
+    gcp: number;
+    total: number;
+  };
+  resolvedAlertsCount: number;
   openAlertsByCategory: {
     networking: number;
     storage: number;

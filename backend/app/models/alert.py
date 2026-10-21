@@ -1,3 +1,4 @@
+
 from typing import Optional
 
 from sqlalchemy import (
@@ -28,20 +29,10 @@ class Alert(Base):
 
     __tablename__ = "alerts"
 
-    # ---------------------------------------------------------
     # Primary Key
-    # ---------------------------------------------------------
+    id = Column(Integer, primary_key=True, index=True)
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
-
-    # ---------------------------------------------------------
     # Original Log Reference
-    # ---------------------------------------------------------
-
     log_id = Column(
         Integer,
         ForeignKey("log_entries.id"),
@@ -49,129 +40,43 @@ class Alert(Base):
         index=True,
     )
 
+    # Upload Reference
+    # Confirm that the uploads table uses id as its primary key.
     upload_id = Column(
         Integer,
+        ForeignKey("uploads.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
-    # ---------------------------------------------------------
     # Detection Information
-    # ---------------------------------------------------------
+    alert_type = Column(String(100), nullable=False, index=True)
+    rule_name = Column(String(255), nullable=False)
+    severity = Column(String(50), nullable=False, index=True)
 
-    alert_type = Column(
-        String(100),
-        nullable=False,
-        index=True,
-    )
-
-    rule_name = Column(
-        String(255),
-        nullable=False,
-    )
-
-    severity = Column(
-        String(50),
-        nullable=False,
-        index=True,
-    )
-
-    # ---------------------------------------------------------
     # Detection Scores
-    # ---------------------------------------------------------
+    risk_score = Column(Float, nullable=False, default=0.0)
+    confidence = Column(Float, nullable=False, default=0.5)
 
-    risk_score = Column(
-        Float,
-        nullable=False,
-        default=0.0,
-    )
-
-    confidence = Column(
-        Float,
-        nullable=False,
-        default=0.5,
-    )
-
-    # ---------------------------------------------------------
     # Source Information
-    # ---------------------------------------------------------
+    ip_address = Column(String(100), nullable=True, index=True)
+    description = Column(Text, nullable=True)
 
-    ip_address = Column(
-        String(100),
-        nullable=True,
-        index=True,
-    )
-
-    description = Column(
-        Text,
-        nullable=True,
-    )
-
-    # ---------------------------------------------------------
     # Alert Lifecycle
-    # ---------------------------------------------------------
+    status = Column(String(50), nullable=False, default="NEW", index=True)
 
-    status = Column(
-        String(50),
-        nullable=False,
-        default="NEW",
-        index=True,
-    )
-
-    # ---------------------------------------------------------
     # Investigation Information
-    # ---------------------------------------------------------
+    confidence_score = Column(Float, nullable=True)
+    investigation_result = Column(String(100), nullable=True)
+    investigation_reason = Column(Text, nullable=True)
+    detected_by = Column(String(100), nullable=True)
+    related_event_count = Column(Integer, nullable=True, default=0)
+    recommended_action = Column(String(255), nullable=True)
+    investigated_by = Column(String(100), nullable=True)
+    investigated_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
 
-    confidence_score = Column(
-        Float,
-        nullable=True,
-    )
-
-    investigation_result = Column(
-        String(100),
-        nullable=True,
-    )
-
-    investigation_reason = Column(
-        Text,
-        nullable=True,
-    )
-
-    detected_by = Column(
-        String(100),
-        nullable=True,
-    )
-
-    related_event_count = Column(
-        Integer,
-        nullable=True,
-        default=0,
-    )
-
-    recommended_action = Column(
-        String(255),
-        nullable=True,
-    )
-
-    investigated_by = Column(
-        String(100),
-        nullable=True,
-    )
-
-    investigated_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    resolved_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    # ---------------------------------------------------------
     # MITRE ATT&CK Mapping
-    # ---------------------------------------------------------
-
     mitre_technique_fk = Column(
         Integer,
         ForeignKey("mitre_techniques.id"),
@@ -182,6 +87,13 @@ class Alert(Base):
     mitre_technique = relationship(
         "MitreTechnique",
         lazy="joined",
+    )
+
+    # Timestamp
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     @property
@@ -207,12 +119,3 @@ class Alert(Base):
             if self.mitre_technique
             else None
         )
-
-    # ---------------------------------------------------------
-    # Timestamp
-    # ---------------------------- = 
-    Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )

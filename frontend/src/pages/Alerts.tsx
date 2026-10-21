@@ -6,13 +6,12 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   Shield, 
-  Server, 
-  Database, 
   Lock, 
   X, 
-  Calendar, 
   Clock, 
-  ArrowUpRight 
+  ArrowUpRight,
+  Upload,
+  Box
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -28,6 +27,7 @@ interface AlertItem {
   permissions: string;
   connector: string;
   connectorType: 'aws' | 'azure' | 'gcp' | 'cyscale';
+  assetCategory: 'Networking' | 'Storage' | 'IAM' | 'Compute';
   lastSeenAt: string;
   status: 'Open' | 'Resolved' | 'New';
   // Detailed info for modal
@@ -48,6 +48,7 @@ const MOCK_ALERTS: AlertItem[] = [
     permissions: "cyscale-app (Networking | security)",
     connector: "Cyscale Sandbox",
     connectorType: "aws",
+    assetCategory: "Networking",
     lastSeenAt: "08/02/2024",
     status: "Open",
     sourceIP: "192.168.1.50",
@@ -65,6 +66,7 @@ const MOCK_ALERTS: AlertItem[] = [
     permissions: "ssh-sh (IAM | IAMUser)",
     connector: "Cyscale Sandbox",
     connectorType: "azure",
+    assetCategory: "IAM",
     lastSeenAt: "17/02/2024",
     status: "Open",
     sourceIP: "10.0.4.12",
@@ -82,6 +84,7 @@ const MOCK_ALERTS: AlertItem[] = [
     permissions: "neo4j-BROTPR (Networking | security)",
     connector: "Cyscale Sandbox",
     connectorType: "gcp",
+    assetCategory: "Storage",
     lastSeenAt: "06/03/2024",
     status: "Open",
     sourceIP: "172.16.0.22",
@@ -94,11 +97,17 @@ const MOCK_ALERTS: AlertItem[] = [
 ];
 
 export default function Alerts() {
+  // Toggle this to true/false to simulate whether logs have been uploaded
+  const [isLogsUploaded, setIsLogsUploaded] = useState(false);
   const [search, setSearch] = useState("");
   const [alerts, setAlerts] = useState<AlertItem[]>(MOCK_ALERTS);
   const [selectedAlert, setSelectedAlert] = useState<AlertItem | null>(null);
 
+  // Tooltip hover states for interactive charts
+  const [activeTooltip, setActiveTooltip] = useState<{ type: string; title: string; subtitle: string; color: string } | null>(null);
+
   const filteredAlerts = useMemo(() => {
+    if (!isLogsUploaded) return [];
     const q = search.trim().toLowerCase();
     if (!q) return alerts;
     return alerts.filter(a => 
@@ -106,95 +115,231 @@ export default function Alerts() {
       a.connector.toLowerCase().includes(q) || 
       a.permissions.toLowerCase().includes(q)
     );
-  }, [alerts, search]);
+  }, [alerts, search, isLogsUploaded]);
 
   const handleResolve = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'Resolved' } : a));
   };
 
+  const resolvedCount = alerts.filter(a => a.status === 'Resolved').length;
+
   return (
-    <div className="space-y-6 text-slate-100 p-2 sm:p-6 bg-[#0f0e17] min-h-screen">
-      {/* Header & Top Dashboard Cards */}
+    <div className="space-y-6 text-slate-100 p-2 sm:p-6 bg-[#0f0e17] min-h-screen relative">
+      {/* Header & 4 Top Header Rows Cards */}
       <div className="flex flex-col gap-6">
         <h1 className="text-2xl font-bold tracking-tight">Alerts</h1>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* Summary Card */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          
+          {/* Card 1: Summary */}
           <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-slate-400">Summary</span>
               <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-300">Today</span>
             </div>
             <div className="my-4 flex items-baseline gap-3">
-              <span className="text-3xl font-bold">98%</span>
-              <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
-                <ArrowUpRight size={12} /> 1.50%
-              </span>
+              <span className="text-3xl font-bold">{isLogsUploaded ? "98%" : "—%"}</span>
+              {isLogsUploaded && (
+                <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
+                  <ArrowUpRight size={12} /> 1.50%
+                </span>
+              )}
             </div>
             {/* Visual mini bars */}
             <div className="h-16 flex items-end gap-1.5 pt-2 border-t border-slate-800/60">
-              <div className="w-1/3 bg-purple-600/30 h-1/2 rounded-t" />
-              <div className="w-1/3 bg-emerald-500/40 h-3/4 rounded-t" />
-              <div className="w-1/3 bg-purple-600 h-full rounded-t" />
+              <div className={cn("w-1/3 rounded-t transition-all", isLogsUploaded ? "bg-purple-600/30 h-1/2" : "bg-slate-800 h-2")} />
+              <div className={cn("w-1/3 rounded-t transition-all", isLogsUploaded ? "bg-emerald-500/40 h-3/4" : "bg-slate-800 h-2")} />
+              <div className={cn("w-1/3 rounded-t transition-all", isLogsUploaded ? "bg-purple-600 h-full" : "bg-slate-800 h-2")} />
             </div>
           </Card>
 
-          {/* Trend Card */}
+          {/* Card 2: Source */}
           <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-400">Trend</span>
-              <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-300">Today</span>
+              <span className="text-sm font-medium text-slate-400">Source</span>
+              <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-300">Live</span>
             </div>
-            <div className="flex items-center gap-4 text-xs text-slate-400 my-2">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500" /> New</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-600" /> Open</span>
+            <div className="my-3 space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">AWS:</span>
+                <span className="font-mono font-medium text-slate-200">{isLogsUploaded ? "178" : "—"}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Azure:</span>
+                <span className="font-mono font-medium text-slate-200">{isLogsUploaded ? "105" : "—"}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">GCP:</span>
+                <span className="font-mono font-medium text-slate-200">{isLogsUploaded ? "82" : "—"}</span>
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-1 h-16 items-end border-t border-slate-800/60 pt-2 text-center">
-              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month, idx) => (
-                <div key={month} className="flex flex-col items-center gap-1">
-                  <div className={cn("w-full rounded-t", idx === 4 ? "bg-purple-600 h-14" : "bg-slate-700/50 h-8")} />
-                  <span className="text-[10px] text-slate-500">{month}</span>
-                </div>
-              ))}
+            <div className="h-10 border-t border-slate-800/60 pt-2 flex items-center justify-between text-[11px] text-slate-400">
+              <span>Total Sources</span>
+              <span className="font-mono font-bold text-purple-400">{isLogsUploaded ? "365" : "—"}</span>
             </div>
           </Card>
 
-          {/* Open Alerts by Asset Category */}
+          {/* Card 3: Resolved Alerts */}
+          <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-400">Resolved Alerts</span>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded">Active</span>
+            </div>
+            <div className="my-4 flex items-baseline gap-2">
+              <span className="text-3xl font-bold font-mono text-emerald-400">
+                {isLogsUploaded ? resolvedCount : "—"}
+              </span>
+              {isLogsUploaded && <span className="text-xs text-slate-400">resolved today</span>}
+            </div>
+            <div className="h-16 border-t border-slate-800/60 pt-2 flex items-center">
+              <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className={cn("h-full bg-emerald-500 transition-all", isLogsUploaded ? "w-[65%]" : "w-0")} />
+              </div>
+            </div>
+          </Card>
+
+          {/* Card 4: Open Alerts by Asset Category */}
           <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
             <span className="text-sm font-medium text-slate-400">Open Alerts by Asset Category</span>
-            <div className="space-y-3 my-2">
+            <div className="space-y-2.5 my-2">
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-slate-300">Networking</span>
-                  <span className="font-bold">278</span>
+                  <span className="font-bold font-mono">{isLogsUploaded ? "278" : "—"}</span>
                 </div>
-                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="bg-purple-500 h-full w-[75%]" />
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className={cn("h-full bg-purple-500 transition-all", isLogsUploaded ? "w-[75%]" : "w-0")} />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-slate-300">Storage</span>
-                  <span className="font-bold">305</span>
+                  <span className="font-bold font-mono">{isLogsUploaded ? "305" : "—"}</span>
                 </div>
-                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full w-[85%]" />
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className={cn("h-full bg-emerald-500 transition-all", isLogsUploaded ? "w-[85%]" : "w-0")} />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-slate-300">IAM</span>
-                  <span className="font-bold">230</span>
+                  <span className="font-bold font-mono">{isLogsUploaded ? "230" : "—"}</span>
                 </div>
-                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="bg-purple-400 h-full w-[60%]" />
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className={cn("h-full bg-purple-400 transition-all", isLogsUploaded ? "w-[60%]" : "w-0")} />
                 </div>
               </div>
             </div>
           </Card>
+
         </div>
       </div>
+
+      {/* CONDITIONAL RENDER: Pre-Upload State vs Post-Upload Live Charts */}
+      {!isLogsUploaded ? (
+        /* Pre-Upload Empty State Banner */
+        <Card className="bg-[#181722] border-slate-800 p-12 text-center flex flex-col items-center justify-center space-y-4 my-6">
+          <div className="p-4 rounded-full bg-purple-500/10 text-purple-400">
+            <Box size={36} />
+          </div>
+          <div className="space-y-1 max-w-md">
+            <h3 className="text-lg font-semibold text-slate-200">No Log Files Uploaded</h3>
+            <p className="text-sm text-slate-400">
+              Upload Log Files to view live data, charts, and detections.
+            </p>
+          </div>
+          <Button 
+            className="bg-purple-600 hover:bg-purple-700 text-white gap-2 mt-2"
+            onClick={() => setIsLogsUploaded(true)}
+          >
+            <Upload size={16} /> Upload Logs
+          </Button>
+        </Card>
+      ) : (
+        /* Post-Upload Live Graphs & Charts Section */
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in duration-300">
+          
+          {/* Trend & Activity Line Graph */}
+          <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-slate-300">Threat Detection Trend</span>
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500" /> New</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Open</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" /> IAM</span>
+              </div>
+            </div>
+            
+            <div className="h-48 w-full relative flex items-end justify-between px-2 pt-6 border-b border-slate-800">
+              {/* Interactive Hoverable Bar/Point columns */}
+              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month, idx) => (
+                <div 
+                  key={month} 
+                  className="h-full flex flex-col items-center justify-end flex-1 relative group cursor-pointer"
+                  onMouseEnter={() => setActiveTooltip({
+                    type: 'Trend',
+                    title: `Month: ${month}`,
+                    subtitle: `New Alerts: ${120 + idx * 15} | Open: ${80 + idx * 10}`,
+                    color: 'text-purple-400'
+                  })}
+                  onMouseLeave={() => setActiveTooltip(null)}
+                >
+                  <div className="w-2 bg-purple-500 rounded-t transition-all group-hover:bg-purple-400" style={{ height: `${40 + idx * 10}%` }} />
+                  <span className="text-[10px] text-slate-500 mt-2">{month}</span>
+                </div>
+              ))}
+            </div>
+            {activeTooltip && (
+              <div className="text-xs bg-slate-900 border border-slate-700 p-2 rounded mt-2 text-slate-300">
+                <span className={cn("font-bold block", activeTooltip.color)}>{activeTooltip.title}</span>
+                <span>{activeTooltip.subtitle}</span>
+              </div>
+            )}
+          </Card>
+
+          {/* Scatter Plot / Asset Correlation Chart */}
+          <Card className="bg-[#181722] border-slate-800 p-5 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-slate-300">Asset Risk Correlation</span>
+              <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">Live Telemetry</span>
+            </div>
+            
+            <div className="h-48 w-full relative border-b border-slate-800 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-around p-4">
+                {/* Simulated live scatter points with hover labels */}
+                {[
+                  { x: '20%', y: '30%', color: 'bg-purple-500', label: 'Networking Asset #102' },
+                  { x: '45%', y: '60%', color: 'bg-emerald-400', label: 'Storage Bucket S3-Prod' },
+                  { x: '70%', y: '40%', color: 'bg-blue-400', label: 'IAM Root Policy Group' },
+                  { x: '85%', y: '80%', color: 'bg-purple-400', label: 'Compute Cluster VM-04' },
+                ].map((pt, i) => (
+                  <div 
+                    key={i}
+                    className={cn("w-3 h-3 rounded-full cursor-pointer transition-transform hover:scale-150 shadow-lg", pt.color)}
+                    style={{ position: 'absolute', left: pt.x, bottom: pt.y }}
+                    onMouseEnter={() => setActiveTooltip({
+                      type: 'Scatter',
+                      title: pt.label,
+                      subtitle: `Risk Level: High | Confidence: 94%`,
+                      color: 'text-emerald-400'
+                    })}
+                    onMouseLeave={() => setActiveTooltip(null)}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-slate-500 italic">Hover points to inspect live asset metadata</span>
+            </div>
+            {activeTooltip && activeTooltip.type === 'Scatter' && (
+              <div className="text-xs bg-slate-900 border border-slate-700 p-2 rounded mt-2 text-slate-300">
+                <span className={cn("font-bold block", activeTooltip.color)}>{activeTooltip.title}</span>
+                <span>{activeTooltip.subtitle}</span>
+              </div>
+            )}
+          </Card>
+
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
@@ -204,14 +349,15 @@ export default function Alerts() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search identities..."
-            className="pl-9 bg-[#181722] border-slate-800 text-slate-100 placeholder:text-slate-500 focus-visible:ring-purple-500"
+            disabled={!isLogsUploaded}
+            className="pl-9 bg-[#181722] border-slate-800 text-slate-100 placeholder:text-slate-500 focus-visible:ring-purple-500 disabled:opacity-50"
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="bg-[#181722] border-slate-800 text-slate-300 hover:bg-slate-800">
+          <Button variant="outline" size="sm" disabled={!isLogsUploaded} className="bg-[#181722] border-slate-800 text-slate-300 hover:bg-slate-800">
             Search
           </Button>
-          <Button variant="outline" size="sm" className="bg-[#181722] border-slate-800 text-slate-300 hover:bg-slate-800 gap-2">
+          <Button variant="outline" size="sm" disabled={!isLogsUploaded} className="bg-[#181722] border-slate-800 text-slate-300 hover:bg-slate-800 gap-2">
             <Filter size={14} /> Filter
           </Button>
         </div>
@@ -225,7 +371,7 @@ export default function Alerts() {
         <Table>
           <TableHeader>
             <TableRow className="border-slate-800 hover:bg-transparent text-slate-400">
-              <TableHead className="w-10"><input type="checkbox" className="rounded border-slate-700 bg-slate-900" /></TableHead>
+              <TableHead className="w-10"><input type="checkbox" disabled={!isLogsUploaded} className="rounded border-slate-700 bg-slate-900" /></TableHead>
               <TableHead className="text-slate-400">Name</TableHead>
               <TableHead className="text-slate-400">Impacted assets</TableHead>
               <TableHead className="text-slate-400">Permissions</TableHead>
@@ -236,10 +382,10 @@ export default function Alerts() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAlerts.length === 0 ? (
+            {!isLogsUploaded || filteredAlerts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-12 text-center text-slate-500">
-                  No alerts match your filter criteria.
+                <TableCell colSpan={8} className="py-16 text-center text-slate-500">
+                  {!isLogsUploaded ? "Upload log files to generate detections and view live data." : "No alerts match your filter criteria."}
                 </TableCell>
               </TableRow>
             ) : (
