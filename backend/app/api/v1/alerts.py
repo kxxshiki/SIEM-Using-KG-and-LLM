@@ -1,3 +1,6 @@
+from app.config import settings
+from app.core import ttl_cache
+from app.core.scope import DataScope, get_data_scope
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -30,35 +33,34 @@ def get_alerts(
     status: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
 ):
-    query = db.query(Alert)
+    # Fresh sign-in or nothing uploaded yet: answer at once without touching the alerts table
+    if not scope.unrestricted and scope.alerts == 0:
+        return AlertListResponse(total=0, alerts=[])
 
+    query = db.query(Alert)
+    if not scope.unrestricted:
+        query = query.filter(Alert.upload_id.in_(scope.upload_ids))
     if alert_id is not None:
         query = query.filter(Alert.id == alert_id)
-
     if severity:
         query = query.filter(Alert.severity == severity)
-
     if status:
         query = query.filter(Alert.status == status)
 
-    total = query.count()
-
-    alerts = (
-        query
-        .order_by(
-            Alert.created_at.desc(),
-            Alert.id.desc(),
+    filtered = alert_id is not None or bool(severity) or bool(status)
+    if not scope.unrestricted and not filtered:
+        total = scope.alerts   # stored at upload time: no counting
+    else:
+        total = ttl_cache.cached(
+            f"alerts-count:{scope.key}:{alert_id}:{severity}:{status}",
+            settings.SUMMARY_CACHE_SECONDS, query.count,
         )
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
 
-    return AlertListResponse(
-        total=total,
-        alerts=alerts,
-    )
+    # Newest first by id: uses the primary-key index, so no sorting of millions of rows
+    alerts = query.order_by(Alert.id.desc()).offset(skip).limit(limit).all()
+    return AlertListResponse(total=total, alerts=alerts)
 
 
 @router.get("/{alert_id}", response_model=AlertOut)

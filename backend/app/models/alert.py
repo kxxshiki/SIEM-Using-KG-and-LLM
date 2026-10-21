@@ -49,6 +49,12 @@ class Alert(Base):
         index=True,
     )
 
+    upload_id = Column(
+        Integer,
+        nullable=True,
+        index=True,
+    )
+
     # ---------------------------------------------------------
     # Detection Information
     # ---------------------------------------------------------
@@ -204,9 +210,8 @@ class Alert(Base):
 
     # ---------------------------------------------------------
     # Timestamp
-    # ---------------------------------------------------------
-
-    created_at = Column(
+    # ---------------------------- = 
+    Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,

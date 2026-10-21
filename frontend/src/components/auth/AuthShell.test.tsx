@@ -1,47 +1,52 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/context/ThemeContext", () => ({ useTheme: () => ({ theme: "dark", toggle: vi.fn() }) }));
+vi.mock("@/context/ThemeContext", () => ({
+  useTheme: () => ({ theme: "dark", toggle: vi.fn() }),
+}));
+
 vi.mock("@/components/auth/ParticleNetworkBackground", () => ({
-  default: ({ animate }: { animate?: boolean }) => <div data-testid="bg" data-animate={String(animate)} />,
+  default: () => <div data-testid="bg" />,
 }));
 
 import AuthShell from "./AuthShell";
 
-function setReducedMotion(reduce: boolean) {
-  window.matchMedia = ((q: string) => ({
-    matches: reduce && q.includes("reduce"), media: q, onchange: null,
-    addEventListener: () => undefined, removeEventListener: () => undefined,
-    addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
-}
-
-describe("AuthShell motion control", () => {
+describe("AuthShell", () => {
   beforeEach(() => localStorage.clear());
 
-  it("animates by default", () => {
-    setReducedMotion(false);
-    render(<AuthShell title="t">x</AuthShell>);
-    expect(screen.getByTestId("bg")).toHaveAttribute("data-animate", "true");
-    expect(screen.getByRole("button", { name: /pause background motion/i })).toBeInTheDocument();
+  it("renders the branding, title, and children", () => {
+    render(
+      <AuthShell title="Sign in" subtitle="Welcome back">
+        Login form
+      </AuthShell>,
+    );
+
+    expect(screen.getByText("Threat Radar")).toBeInTheDocument();
+    expect(screen.getByText("SentinelSIEM")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Sign in" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    expect(screen.getByText("Login form")).toBeInTheDocument();
   });
 
-  it("starts paused when the system asks for reduced motion, and the user can switch it on", async () => {
-    setReducedMotion(true);
-    render(<AuthShell title="t">x</AuthShell>);
-    expect(screen.getByTestId("bg")).toHaveAttribute("data-animate", "false");
-    await userEvent.click(screen.getByRole("button", { name: /play background motion/i }));
-    expect(screen.getByTestId("bg")).toHaveAttribute("data-animate", "true");
-    expect(localStorage.getItem("siem-motion")).toBe("on");
+  it("renders the theme toggle", () => {
+    render(<AuthShell title="Sign in">Login form</AuthShell>);
+
+    expect(
+      screen.getByRole("button", { name: /switch to light mode/i }),
+    ).toBeInTheDocument();
   });
 
-  it("remembers a pause", async () => {
-    setReducedMotion(false);
-    const { unmount } = render(<AuthShell title="t">x</AuthShell>);
-    await userEvent.click(screen.getByRole("button", { name: /pause background motion/i }));
-    unmount();
-    render(<AuthShell title="t">x</AuthShell>);
-    expect(screen.getByTestId("bg")).toHaveAttribute("data-animate", "false");
+  it("does not render a background motion control", () => {
+    render(<AuthShell title="Sign in">Login form</AuthShell>);
+
+    expect(
+      screen.queryByRole("button", { name: /pause background motion/i }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      screen.queryByRole("button", { name: /play background motion/i }),
+    ).not.toBeInTheDocument();
   });
 });

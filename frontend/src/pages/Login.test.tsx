@@ -12,6 +12,7 @@ vi.mock("@/context/AuthContext", () => ({
 vi.mock("@/context/ThemeContext", () => ({ useTheme: () => ({ theme: "dark", toggle: vi.fn() }) }));
 vi.mock("@/components/auth/ParticleNetworkBackground", () => ({ default: () => null }));
 vi.mock("@/components/auth/OAuthButtons", () => ({ default: () => null }));
+vi.mock("@/lib/prefetch", () => ({ prefetchApp: vi.fn() }));
 vi.mock("@/lib/api", () => ({
   api: { defaults: { baseURL: "http://test/api/v1" }, get: vi.fn(), post: vi.fn() },
   TOKEN_KEY: "siem_token",

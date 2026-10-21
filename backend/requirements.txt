@@ -13,9 +13,10 @@ python-dotenv==1.0.1
 scikit-learn==1.4.2
 pandas==2.2.2
 numpy==1.26.4
-python-dotenv==1.0.1
 bcrypt==4.0.1
 neo4j==6.4.0
+ollama
+certifi==2024.12.14
 passlib[argon2]==1.7.4
 bcrypt==4.0.1
 email-validator>=2.1,<3

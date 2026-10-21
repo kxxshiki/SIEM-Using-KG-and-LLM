@@ -1,41 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/utils";
+import { useCachedQuery } from "@/lib/queryCache";
 import { approveUser, listPendingUsers, rejectUser, toProblem, type PendingUser } from "@/lib/authApi";
 
 export default function Approvals() {
-  const [users, setUsers] = useState<PendingUser[] | null>(null);
-  const [error, setError] = useState("");
+  const { data: users, error, refresh, mutate } = useCachedQuery<PendingUser[]>(
+    "pending-users",
+    listPendingUsers,
+    { pollMs: 15000 }
+  );
+  const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setUsers(await listPendingUsers());
-      setError("");
-    } catch (err) {
-      setError(toProblem(err, "Could not load the list.").message);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const act = async (u: PendingUser, kind: "approve" | "reject") => {
     if (kind === "reject" && !window.confirm(`Reject ${u.username}? They will not be able to sign in.`)) return;
     setBusyId(u.id);
-    setError("");
+    setActionError("");
     try {
       if (kind === "approve") await approveUser(u.id);
       else await rejectUser(u.id);
-      setUsers((list) => (list ? list.filter((x) => x.id !== u.id) : list));
+      mutate((list) => (list ? list.filter((x) => x.id !== u.id) : list));
     } catch (err) {
-      setError(toProblem(err).message);
-      await load();
+      setActionError(toProblem(err).message);
+      void refresh();
     } finally {
       setBusyId(null);
     }
   };
+
+  const message = actionError || (error ? toProblem(error, "Could not load the list.").message : "");
 
   return (
     <div className="space-y-4">
@@ -46,13 +40,24 @@ export default function Approvals() {
         </p>
       </div>
 
-      {error && (
-        <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">{error}</div>
+      {message && (
+        <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+          {message}
+        </div>
       )}
 
-      {users === null && !error && <p role="status" className="text-sm text-muted-foreground">Loading…</p>}
+      {users === undefined && !error && (
+        <div role="status" className="space-y-3">
+          <span className="sr-only">Loading</span>
+          {[0, 1].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg border bg-card" />
+          ))}
+        </div>
+      )}
       {users && users.length === 0 && (
-        <p className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">No users are waiting for approval.</p>
+        <p className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+          No users are waiting for approval.
+        </p>
       )}
 
       <ul className="space-y-3">

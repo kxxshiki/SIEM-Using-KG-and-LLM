@@ -77,4 +77,5 @@ export interface DashboardSummary {
   top_ips: CountItem[];
   top_countries: CountItem[];
   generated_at: string;
+    has_data: boolean;
 }

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2, RefreshCw, Search } from "lucide-react";
 import { api, getErrorMessage } from "@/lib/api";
-import { usePolling } from "@/lib/usePolling";
+import { useCachedQuery } from "@/lib/queryCache";
 import { cn, formatDateTime } from "@/lib/utils";
 import type { Alert, AlertListResponse } from "@/types";
 import SeverityBadge from "@/components/SeverityBadge";
@@ -43,45 +43,30 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [total, setTotal] = useState(0);
+ 
   const [page, setPage] = useState(0);
   const [severity, setSeverity] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (!silent) setLoading(true);
-      try {
-        const params: Record<string, string | number> = { skip: page * PAGE_SIZE, limit: PAGE_SIZE };
-        if (severity) params.severity = severity;
-        if (status) params.status = status;
-        const res = await api.get<AlertListResponse>("/alerts", { params });
-        setAlerts(res.data.alerts);
-        setTotal(res.data.total);
-        setError("");
-      } catch (err) {
-        setError(getErrorMessage(err, "Could not load alerts"));
-      } finally {
-        if (!silent) setLoading(false);
-      }
+  const { data, error, refresh, mutate } = useCachedQuery<AlertListResponse>(
+    `alerts:${page}:${severity}:${status}`,
+    () => {
+      const params: Record<string, string | number> = { skip: page * PAGE_SIZE, limit: PAGE_SIZE };
+      if (severity) params.severity = severity;
+      if (status) params.status = status;
+      return api.get<AlertListResponse>("/alerts", { params }).then((r) => r.data);
     },
-    [page, severity, status]
+    { pollMs: live ? 5000 : 0 } // live monitoring, without flashing a loading state
   );
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Live monitoring: refresh every 5 seconds without flashing the loading state.
-  usePolling(() => void load(true), 5000, live);
+  const alerts = data?.alerts ?? [];
+  const total = data?.total ?? 0;
+  const loading = data === undefined && !error;
+  const errorText = error ? getErrorMessage(error, "Could not load alerts") : "";
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -94,7 +79,9 @@ export default function Alerts() {
   }, [alerts, search]);
 
   const replaceAlert = (updated: Alert) =>
-    setAlerts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    mutate((prev) =>
+      prev ? { ...prev, alerts: prev.alerts.map((a) => (a.id === updated.id ? updated : a)) } : prev
+    );
 
   const overrideStatus = async (alert: Alert, newStatus: string) => {
     if (newStatus === alert.status) return;
@@ -145,7 +132,7 @@ export default function Alerts() {
             </span>
             Live {live ? "on" : "off"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => void load()}>
+          <Button variant="outline" size="sm" onClick={() => void refresh()}>
             <RefreshCw size={13} /> Refresh
           </Button>
         </div>
@@ -191,9 +178,9 @@ export default function Alerts() {
         </Select>
       </div>
 
-      {error && (
+      {errorText && (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-600 dark:text-red-400">
-          {error}
+          {errorText}
         </div>
       )}
       {actionError && (
@@ -219,11 +206,13 @@ export default function Alerts() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={COLUMNS} className="py-16 text-center text-muted-foreground">
-                  Loading alerts…
-                </TableCell>
-              </TableRow>
+              [0, 1, 2, 3, 4].map((i) => (
+                <TableRow key={i} className="hover:bg-transparent">
+                  <TableCell colSpan={COLUMNS}>
+                    <div className="h-5 animate-pulse rounded bg-muted" />
+                  </TableCell>
+                </TableRow>
+              ))
             ) : visible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={COLUMNS} className="py-16 text-center text-muted-foreground">

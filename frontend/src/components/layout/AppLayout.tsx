@@ -1,49 +1,33 @@
-
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  Bell,
-  LayoutDashboard,
-  Link2,
-  LogOut,
-  Menu,
-  Moon,
-  Shield,
-  Sun,
-  Upload,
-  UserCheck,
-  type LucideIcon,
+  BarChart3, Bell, Bot, Database, FileText, Fingerprint, LayoutDashboard, LogOut, Menu,
+  MessageSquare, Moon, Settings, Shield, ShieldAlert, Sun, type LucideIcon,
 } from "lucide-react";
+import Brand from "@/components/Brand";
+import PageSkeleton from "@/components/PageSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
-import Brand from "@/components/Brand";
 
 interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
   end: boolean;
-  adminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/analytics", label: "Analytics", icon: BarChart3, end: false },
+  { to: "/threats", label: "Threats", icon: ShieldAlert, end: false },
+  { to: "/sources", label: "Sources", icon: Database, end: false },
+  { to: "/reports", label: "Reports", icon: FileText, end: false },
+  { to: "/indicators", label: "Indicators", icon: Fingerprint, end: false },
   { to: "/alerts", label: "Alerts", icon: Bell, end: false },
-  { to: "/upload", label: "Upload Logs", icon: Upload, end: false },
-  {
-    to: "/account/connections",
-    label: "Connected accounts",
-    icon: Link2,
-    end: false,
-  },
-  {
-    to: "/admin/approvals",
-    label: "Approvals",
-    icon: UserCheck,
-    end: false,
-    adminOnly: true,
-  },
+  { to: "/socco-pilot", label: "Socco-Pilot", icon: Bot, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, end: false },
+  { to: "/feedback", label: "Feedback", icon: MessageSquare, end: false },
 ];
 
 export default function AppLayout() {
@@ -58,9 +42,9 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       {/* Top bar */}
-      <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b bg-card/90 px-4 backdrop-blur">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b bg-card/95 px-4">
         <button
           type="button"
           aria-label="Toggle menu"
@@ -74,12 +58,7 @@ export default function AppLayout() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-brand-purple">
             <Shield size={15} className="text-white" />
           </div>
-          <span className="text-[15px] font-bold tracking-tight">
-            SIEM
-            <span className="bg-gradient-to-r from-primary to-brand-purple bg-clip-text text-transparent">
-              .ai
-            </span>
-          </span>
+          <Brand className="text-[15px]" />
         </div>
 
         <div className="flex-1" />
@@ -105,9 +84,7 @@ export default function AppLayout() {
           <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-purple text-[11px] font-bold text-white">
             {user?.username?.[0]?.toUpperCase()}
           </div>
-          <span className="hidden text-sm font-medium sm:inline">
-            {user?.username}
-          </span>
+          <span className="hidden text-sm font-medium sm:inline">{user?.username}</span>
           <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">
             {user?.role}
           </span>
@@ -118,7 +95,7 @@ export default function AppLayout() {
       {open && (
         <div
           onClick={() => setOpen(false)}
-          className="fixed inset-0 top-14 z-30 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 top-14 z-30 bg-black/50"
           aria-hidden="true"
         />
       )}
@@ -133,11 +110,8 @@ export default function AppLayout() {
         <p className="px-5 pb-2 pt-5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Navigation
         </p>
-
-        <nav className="flex-1 space-y-1 px-3">
-          {NAV_ITEMS.filter(
-            (item) => !item.adminOnly || user?.role === "admin"
-          ).map(({ to, label, icon: Icon, end }) => (
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3">
+          {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -152,12 +126,11 @@ export default function AppLayout() {
                 )
               }
             >
-              <Icon size={16} />
+              <Icon size={16} aria-hidden="true" />
               {label}
             </NavLink>
           ))}
         </nav>
-
         <div className="border-t p-3">
           <button
             type="button"
@@ -170,10 +143,12 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {/* Page content — full width, centred */}
+      {/* Page content. The header and sidebar appear at once; the page fills in. */}
       <main className="pt-14">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
-          <Outlet />
+          <Suspense fallback={<PageSkeleton />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>

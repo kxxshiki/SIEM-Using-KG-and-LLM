@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import AuthShell from "@/components/auth/AuthShell";
@@ -8,8 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setVerificationToken, toProblem } from "@/lib/authApi";
+import { prefetchApp } from "@/lib/prefetch";
 
 export default function Login() {
+   useEffect(() => {
+    prefetchApp();
+  }, []);
+
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

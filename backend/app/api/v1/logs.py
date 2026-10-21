@@ -1,14 +1,16 @@
 import logging
 import time
 from fastapi import (APIRouter,Depends,UploadFile,File,HTTPException,Query,BackgroundTasks,)
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.models.log_entry import LogEntry
 from app.models.alert import Alert
+from app.models.upload import Upload
 from app.ml.models.audit_log import AuditLog
 from app.ml.models.user import User
+from app.core.scope import DataScope, get_data_scope
 from app.schemas.log import LogListResponse, LogUploadResponse
 from app.services.log_parser_service import parse_file_content
 from app.services.normalization_service import normalize
@@ -96,6 +98,11 @@ async def upload_logs(
         del parsed_lines
 
         saved = 0
+        upload = Upload(username=current_user.username, filename=file.filename)
+        db.add(upload)
+        db.commit()
+        db.refresh(upload)
+        upload_id = upload.id
         alerts_created = 0
 
         insert_logs_time = 0.0
@@ -136,7 +143,7 @@ async def upload_logs(
 
                 result = db.execute(
                     stmt,
-                    batch,
+                    [{**row, "upload_id": upload_id} for row in batch],
                 )
 
                 log_ids = [
@@ -216,7 +223,7 @@ async def upload_logs(
 
                     result = db.execute(
                         stmt,
-                        all_alerts,
+                        [{**a, "upload_id": upload_id} for a in all_alerts],
                     )
 
                     new_alert_ids = [
@@ -236,6 +243,12 @@ async def upload_logs(
                 # COMMIT COMPLETE LOG BATCH
                 # =================================================
 
+                db.commit()
+                db.execute(
+                    update(Upload)
+                    .where(Upload.id == upload_id)
+                    .values(logs_parsed=saved, alerts_created=alerts_created)
+                )
                 db.commit()
 
                 # =================================================
@@ -372,53 +385,28 @@ async def upload_logs(
     # GET LOGS
     # ============================================================
 
-@router.get(
-        "",
-        response_model=LogListResponse,
-    )
+@router.get("", response_model=LogListResponse)
 def get_logs(
-        skip: int = Query(
-            default=0,
-            ge=0,
-        ),
-        limit: int = Query(
-            default=100,
-            ge=1,
-            le=500,
-        ),
-        severity: str = None,
-        platform: str = None,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-    ):
-        """
-        Retrieve paginated logs with optional filters.
-        """
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    severity: str = None,
+    platform: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
+):
+    """Retrieve paginated logs with optional filters, limited to the user's visible uploads."""
+    if not scope.unrestricted and scope.logs == 0:
+        return LogListResponse(total=0, logs=[])
 
-        query = db.query(LogEntry)
+    query = db.query(LogEntry)
+    if not scope.unrestricted:
+        query = query.filter(LogEntry.upload_id.in_(scope.upload_ids))
+    if severity:
+        query = query.filter(LogEntry.severity == severity)
+    if platform:
+        query = query.filter(LogEntry.platform == platform)   # was `source_platform`, which does not exist
 
-        if severity:
-            query = query.filter(
-                LogEntry.severity == severity
-            )
-
-        if platform:
-            query = query.filter(
-                LogEntry.source_platform == platform
-            )
-
-        total = query.count()
-
-        logs = (
-            query
-            .order_by(
-                LogEntry.created_at.desc()
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-
-        return LogListResponse(
-            total=total,
-            logs=logs, )
+    total = scope.logs if (not scope.unrestricted and not severity and not platform) else query.count()
+    logs = query.order_by(LogEntry.id.desc()).offset(skip).limit(limit).all()
+    return LogListResponse(total=total, logs=logs)

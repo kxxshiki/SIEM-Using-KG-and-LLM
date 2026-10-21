@@ -19,3 +19,4 @@ class LogEntry(Base):
     raw_log = Column(Text)
     source_file = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    upload_id = Column(Integer, nullable=True, index=True)

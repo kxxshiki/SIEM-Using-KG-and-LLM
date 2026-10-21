@@ -67,9 +67,10 @@ describe("ParticleNetworkBackground", () => {
   it("animates and cancels the animation loop on unmount", () => {
     mockMotion(false);
 
+    let frameId = 0;
     const raf = vi
       .spyOn(window, "requestAnimationFrame")
-      .mockReturnValue(7);
+      .mockImplementation(() => ++frameId);
 
     const cancel = vi
       .spyOn(window, "cancelAnimationFrame")
@@ -78,10 +79,11 @@ describe("ParticleNetworkBackground", () => {
     const { unmount } = render(<ParticleNetworkBackground />);
 
     expect(raf).toHaveBeenCalled();
+    const scheduledId = frameId;
 
     unmount();
 
-    expect(cancel).toHaveBeenCalledWith(7);
+    expect(cancel).toHaveBeenCalledWith(scheduledId);
   });
 
   it("keeps moving (more gently) when the computer asks for reduced motion", () => {
@@ -112,7 +114,9 @@ describe("ParticleNetworkBackground", () => {
   it("stops the animation loop when animate changes to false", () => {
     mockMotion(false);
 
-    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(7);
+    let frameId = 0;
+    vi.spyOn(window, "requestAnimationFrame")
+      .mockImplementation(() => ++frameId);
 
     const cancel = vi
       .spyOn(window, "cancelAnimationFrame")
@@ -122,10 +126,11 @@ describe("ParticleNetworkBackground", () => {
       <ParticleNetworkBackground animate />,
     );
 
+    const scheduledId = frameId;
     cancel.mockClear();
 
     rerender(<ParticleNetworkBackground animate={false} />);
 
-    expect(cancel).toHaveBeenCalledWith(7);
+    expect(cancel).toHaveBeenCalledWith(scheduledId);
   });
 });

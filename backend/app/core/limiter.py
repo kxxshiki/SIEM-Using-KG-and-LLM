@@ -12,25 +12,31 @@ log = logging.getLogger("siem.limiter")
 _lock = threading.Lock()
 _mem: Dict[str, Tuple[int, float]] = {}
 _client: Optional["redis.Redis"] = None
+_down_until = 0.0   # development only: do not retry Redis until this time
 
 
 def _redis():
     global _client
     if not settings.REDIS_ENABLED:
         return None
+    if not settings.is_production and time.time() < _down_until:
+        return None  # Redis failed a moment ago; do not wait for it again
     if _client is None:
         _client = redis.Redis.from_url(
             settings.REDIS_URL, decode_responses=True,
-            socket_timeout=1, socket_connect_timeout=1,
+            socket_timeout=0.3, socket_connect_timeout=0.3,
         )
     return _client
 
 
 def _fail(exc: Exception) -> None:
+    global _down_until
     if settings.is_production:
         log.error("Redis unavailable: %s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-    log.warning("Redis unavailable, using in-memory limiter (development only)")
+    _down_until = time.time() + 30
+    log.warning("Redis unavailable, using the in-memory limiter for 30 s (development only). "
+                "Set REDIS_ENABLED=false if you do not run Redis locally.")
 
 
 def _live(key: str) -> Tuple[int, float]:

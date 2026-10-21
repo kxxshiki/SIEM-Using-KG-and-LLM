@@ -1,14 +1,10 @@
 """
 Dashboard summary endpoint.
 
-One request returns everything the dashboard needs, and the result is cached
-in Redis for 30 seconds — so a dashboard that auto-refreshes every 10 seconds
-only hits PostgreSQL about twice a minute no matter how many people have it open.
-
-The cache is BEST-EFFORT: if Redis is down, we simply skip it and query
-PostgreSQL directly. The dashboard never breaks because of Redis.
+It only counts data from the uploads the signed-in user may see (app/core/scope.py),
+so a fresh sign-in starts empty and costs one tiny query. Results are cached in memory
+for SUMMARY_CACHE_SECONDS. This works with or without Redis.
 """
-import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
@@ -16,75 +12,87 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
-from app.core.redis_client import cache_get, cache_set
+from app.config import settings
+from app.core import ttl_cache
+from app.core.scope import DataScope, get_data_scope
+from app.db.postgres import get_db
 from app.models.alert import Alert
 from app.models.log_entry import LogEntry
-from app.ml.models.user import User
 from app.schemas.dashboard import DashboardSummary
 
-logger = logging.getLogger("siem.dashboard")
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
-CACHE_KEY = "dashboard:summary"
-CACHE_TTL_SECONDS = 30
 TREND_DAYS = 7
-
-# Alert statuses that mean "someone still needs to look at this".
 OPEN_STATUSES = ["NEW", "UNDER_INVESTIGATION", "CONFIRMED_THREAT"]
 
 
-def _daily_counts(db: Session, column, days: int) -> List[Dict[str, Any]]:
+class DashboardView(DashboardSummary):
+    has_data: bool = False
+
+
+def _daily_counts(db: Session, column, days: int, filters: list) -> List[Dict[str, Any]]:
     """Rows per calendar day (UTC) for the last `days` days, zero-filled."""
     today = datetime.utcnow().date()
     start = today - timedelta(days=days - 1)
-    day_col = func.date(column)  # works on PostgreSQL and SQLite
-
+    day_col = func.date(column)
     rows = (
         db.query(day_col.label("day"), func.count().label("cnt"))
-        .filter(column >= datetime.combine(start, datetime.min.time()))
+        .filter(*filters, column >= datetime.combine(start, datetime.min.time()))
         .group_by(day_col)
         .all()
     )
-    by_day = {str(row.day): row.cnt for row in rows}  # key = "YYYY-MM-DD"
+    by_day = {str(row.day): row.cnt for row in rows}
+    return [
+        {"date": (start + timedelta(days=i)).isoformat(),
+         "count": int(by_day.get((start + timedelta(days=i)).isoformat(), 0))}
+        for i in range(days)
+    ]
 
-    result = []
-    for i in range(days):
-        d = start + timedelta(days=i)
-        result.append({"date": d.isoformat(), "count": int(by_day.get(d.isoformat(), 0))})
-    return result
 
-
-def _group_counts(db: Session, column, limit: int = 0, only_not_null: bool = True) -> List[Dict[str, Any]]:
-    """GROUP BY one column and count — used for attack types, statuses, IPs, etc."""
-    query = db.query(column, func.count().label("cnt"))
-    if only_not_null:
-        query = query.filter(column.isnot(None))
-    query = query.group_by(column).order_by(func.count().desc())
+def _group_counts(db: Session, column, filters: list, limit: int = 0) -> List[Dict[str, Any]]:
+    query = (
+        db.query(column, func.count().label("cnt"))
+        .filter(*filters, column.isnot(None))
+        .group_by(column)
+        .order_by(func.count().desc())
+    )
     if limit:
         query = query.limit(limit)
     return [{"name": str(name), "count": int(cnt)} for name, cnt in query.all()]
 
 
-def _build_summary(db: Session) -> Dict[str, Any]:
+def _empty_summary() -> Dict[str, Any]:
+    return {
+        "total_logs": 0, "total_alerts": 0, "threats_today": 0, "critical_open_alerts": 0,
+        "confirmed_threats": 0, "threat_trend": [], "log_volume": [], "attack_types": [],
+        "status_breakdown": [], "severity_breakdown": [], "top_ips": [], "top_countries": [],
+        "generated_at": datetime.utcnow().isoformat(), "has_data": False,
+    }
+
+
+def _build_summary(db: Session, scope: DataScope) -> Dict[str, Any]:
+    log_f = [] if scope.unrestricted else [LogEntry.upload_id.in_(scope.upload_ids)]
+    alert_f = [] if scope.unrestricted else [Alert.upload_id.in_(scope.upload_ids)]
     start_of_today = datetime.combine(datetime.utcnow().date(), datetime.min.time())
 
-    total_logs = db.query(func.count(LogEntry.id)).scalar() or 0
-    total_alerts = db.query(func.count(Alert.id)).scalar() or 0
-    threats_today = db.query(func.count(Alert.id)).filter(Alert.created_at >= start_of_today).scalar() or 0
-    critical_open = (
-        db.query(func.count(Alert.id))
-        .filter(Alert.severity == "critical", Alert.status.in_(OPEN_STATUSES))
-        .scalar()
-        or 0
-    )
-    confirmed = db.query(func.count(Alert.id)).filter(Alert.status == "CONFIRMED_THREAT").scalar() or 0
+    # Totals are stored at upload time, so no table scan is needed for a scoped view.
+    total_logs = (scope.logs if not scope.unrestricted
+                  else db.query(func.count(LogEntry.id)).scalar() or 0)
+    total_alerts = (scope.alerts if not scope.unrestricted
+                    else db.query(func.count(Alert.id)).scalar() or 0)
 
-    # Countries of the logs that actually triggered alerts (not every log ever).
+    threats_today = (db.query(func.count(Alert.id))
+                     .filter(*alert_f, Alert.created_at >= start_of_today).scalar() or 0)
+    critical_open = (db.query(func.count(Alert.id))
+                     .filter(*alert_f, Alert.severity == "critical", Alert.status.in_(OPEN_STATUSES))
+                     .scalar() or 0)
+    confirmed = (db.query(func.count(Alert.id))
+                 .filter(*alert_f, Alert.status == "CONFIRMED_THREAT").scalar() or 0)
+
     country_rows = (
         db.query(LogEntry.country, func.count(Alert.id).label("cnt"))
         .join(Alert, Alert.log_id == LogEntry.id)
-        .filter(LogEntry.country.isnot(None))
+        .filter(*alert_f, LogEntry.country.isnot(None))
         .group_by(LogEntry.country)
         .order_by(func.count(Alert.id).desc())
         .limit(8)
@@ -97,37 +105,28 @@ def _build_summary(db: Session) -> Dict[str, Any]:
         "threats_today": int(threats_today),
         "critical_open_alerts": int(critical_open),
         "confirmed_threats": int(confirmed),
-        "threat_trend": _daily_counts(db, Alert.created_at, TREND_DAYS),
-        "log_volume": _daily_counts(db, LogEntry.created_at, TREND_DAYS),
-        "attack_types": _group_counts(db, Alert.alert_type, limit=8),
-        "status_breakdown": _group_counts(db, Alert.status),
-        "severity_breakdown": _group_counts(db, Alert.severity),
-        "top_ips": _group_counts(db, Alert.ip_address, limit=10),
+        "threat_trend": _daily_counts(db, Alert.created_at, TREND_DAYS, alert_f),
+        "log_volume": _daily_counts(db, LogEntry.created_at, TREND_DAYS, log_f),
+        "attack_types": _group_counts(db, Alert.alert_type, alert_f, limit=8),
+        "status_breakdown": _group_counts(db, Alert.status, alert_f),
+        "severity_breakdown": _group_counts(db, Alert.severity, alert_f),
+        "top_ips": _group_counts(db, Alert.ip_address, alert_f, limit=10),
         "top_countries": [{"name": str(c), "count": int(n)} for c, n in country_rows],
         "generated_at": datetime.utcnow().isoformat(),
+        "has_data": int(total_logs) > 0,
     }
 
 
-@router.get("/summary", response_model=DashboardSummary)
+@router.get("/summary", response_model=DashboardView)
 def dashboard_summary(
     refresh: bool = False,
+    scope: DataScope = Depends(get_data_scope),   # also requires a valid login
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """`?refresh=true` skips the cache — used by the dashboard's Refresh button."""
-    if not refresh:
-        try:
-            cached = cache_get(CACHE_KEY)
-            if cached:
-                return cached
-        except Exception:
-            logger.warning("Redis unavailable — reading dashboard straight from PostgreSQL")
-
-    summary = _build_summary(db)
-
-    try:
-        cache_set(CACHE_KEY, summary, CACHE_TTL_SECONDS)
-    except Exception:
-        logger.warning("Redis unavailable — dashboard result not cached")
-
-    return summary
+    """`?refresh=true` skips the cache (the dashboard's Refresh button)."""
+    if scope.is_empty or (not scope.unrestricted and scope.logs == 0):
+        return _empty_summary()   # fresh sign-in: nothing to count, answers at once
+    return ttl_cache.cached(
+        f"summary:{scope.key}", settings.SUMMARY_CACHE_SECONDS,
+        lambda: _build_summary(db, scope), force=refresh,
+    )

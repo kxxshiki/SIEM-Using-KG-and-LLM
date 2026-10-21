@@ -6,6 +6,7 @@ import type { UploadResult } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { clearQueryCache } from "@/lib/queryCache";
 
 const ALLOWED = [".log", ".txt", ".csv", ".json"];
 
@@ -55,6 +56,7 @@ export default function UploadLogs() {
       form.append("file", file);
       const res = await api.post<UploadResult>("/logs/upload", form);
       setResult(res.data);
+            clearQueryCache();
       setFile(null);
     } catch (err) {
       setError(getErrorMessage(err, "Upload failed"));

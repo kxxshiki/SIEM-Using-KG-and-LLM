@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
-    NEO4J_URI: str = ""
-    NEO4J_USER: str = ""
+    NEO4J_URI: str = "bolt://127.0.0.1:7687"
+    NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: str = ""
     NEO4J_DATABASE: str = "neo4j"
 
@@ -112,6 +112,12 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+    # What the dashboard, alerts and logs pages show:
+    #   session = only uploads made in the current sign-in (every fresh sign-in starts empty)
+    #   user    = every upload made by the signed-in user
+    #   all     = everything in the database (old behaviour)
+    DATA_SCOPE: Literal["session", "user", "all"] = "session"
+    SUMMARY_CACHE_SECONDS: int = 30
 
 
 settings = get_settings()
