@@ -1,5 +1,8 @@
 import logging
-from datetime import timedelta
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -14,8 +17,9 @@ from app.core import limiter
 from app.core.phone import normalize_phone_for_login
 from app.core.password_policy import password_problems
 from app.core.security import (
-    DUMMY_HASH, create_access_token, create_verification_token, get_current_user,
-    get_password_hash, get_verifying_user, require_admin, verify_and_update, verify_password,
+    DUMMY_HASH, create_verification_token, get_current_user,
+    create_user_session, get_access_session_id, get_password_hash, get_verifying_user,
+    require_admin, verify_and_update, verify_password,
 )
 from app.db.postgres import get_db
 from app.ml.models.audit_log import AuditLog
@@ -24,15 +28,24 @@ from app.schemas.account import (
     AuthOptions, EmailProofResponse, EmailRequest, ForgotPasswordRequest, MessageResponse,
     OtpRequest, PendingUserOut, PhoneLoginSend, PhoneLoginVerify, RegisterRequest,
     RegisterResponse, ResetPasswordRequest, SignupCodeVerify, TokenRequest, TokenValidity,
-    VerificationStatus, VerifyResult,
+    VerificationStatus, VerifyResult, PasswordChangeRequest, PasswordChangeConfirm,
+    AccountSessionOut,
 )
 from app.services import oauth_service as oa
 from app.schemas.auth import Token, UserOut
 from app.services import delivery_service as delivery
 from app.services import verification_service as vs
+from app.models.user_session import UserSession
+from app.models.password_change_challenge import PasswordChangeChallenge
 
 log = logging.getLogger("siem.auth")
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+PASSWORD_CHANGE_CONFIRM_MINUTES = 15
+
+
+def _password_change_digest(token: str) -> str:
+    message = f"password_change:{token}".encode()
+    return hmac.new(settings.SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
 
 
 # ---------- helpers ----------
@@ -240,16 +253,7 @@ def login(
     if new_hash:
         user.hashed_password = new_hash
 
-    token = create_access_token(
-        data={
-            "sub": user.username,
-            "role": user.role.value,
-            "tv": user.token_version,
-        },
-        expires_delta=timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        ),
-    )
+    token = create_user_session(db, user, request)
 
     db.add(
         AuditLog(
@@ -276,8 +280,143 @@ def me(current_user: User = Depends(get_current_user)):
 def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Invalidates ALL tokens of this user (every device)."""
     current_user.token_version += 1
+    db.query(UserSession).filter(
+        UserSession.user_id == current_user.id,
+        UserSession.revoked_at.is_(None),
+    ).update({UserSession.revoked_at: datetime.now(timezone.utc).replace(tzinfo=None)})
     db.add(AuditLog(user=current_user.username, action="logout", target=None))
     db.commit()
+
+
+@router.post("/password-change/request", response_model=MessageResponse)
+def request_password_change(
+    payload: PasswordChangeRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if limiter.hit(f"password-change:{user.id}:{_ip(request)}", 600) > 5:
+        raise _too_many(limiter.ttl(f"password-change:{user.id}:{_ip(request)}"))
+    if payload.email != user.email.lower():
+        raise HTTPException(400, "Enter the email address registered to this account")
+
+    problems = password_problems(payload.new_password, username=user.username, email=user.email)
+    if problems:
+        raise HTTPException(422, "; ".join(problems))
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.query(PasswordChangeChallenge).filter(
+        PasswordChangeChallenge.user_id == user.id,
+        PasswordChangeChallenge.consumed_at.is_(None),
+    ).update({PasswordChangeChallenge.consumed_at: now})
+
+    token = secrets.token_urlsafe(32)
+    challenge = PasswordChangeChallenge(
+        user_id=user.id,
+        token_hash=_password_change_digest(token),
+        password_hash=get_password_hash(payload.new_password),
+        expires_at=now + timedelta(minutes=PASSWORD_CHANGE_CONFIRM_MINUTES),
+    )
+    db.add(challenge)
+    db.flush()
+
+    link = f"{settings.FRONTEND_URL.rstrip('/')}/account/password/confirm?token={token}"
+    subject, text, body = delivery.password_change_confirmation_email(
+        user.full_name or user.username, link,
+    )
+    try:
+        delivery.send_email(user.email, subject, text, body)
+        db.commit()
+    except delivery.DeliveryError as exc:
+        db.rollback()
+        raise HTTPException(503, "Could not send the confirmation email. Try again later.") from exc
+
+    db.add(AuditLog(user=user.username, action="password_change_requested", target=None))
+    db.commit()
+    return MessageResponse(message=f"A confirmation link was sent to {user.email}.")
+
+
+@router.post("/password-change/confirm", response_model=MessageResponse)
+def confirm_password_change(
+    payload: PasswordChangeConfirm,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    if limiter.hit(f"password-change-confirm:{_ip(request)}", 600) > 20:
+        raise _too_many(limiter.ttl(f"password-change-confirm:{_ip(request)}"))
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    challenge = db.query(PasswordChangeChallenge).filter(
+        PasswordChangeChallenge.token_hash == _password_change_digest(payload.token),
+        PasswordChangeChallenge.consumed_at.is_(None),
+        PasswordChangeChallenge.expires_at > now,
+    ).with_for_update().first()
+    if challenge is None:
+        raise HTTPException(400, "This confirmation link is invalid, expired, or already used")
+
+    user = db.query(User).filter(User.id == challenge.user_id).with_for_update().first()
+    if user is None or user.status != UserStatus.active.value:
+        db.rollback()
+        raise HTTPException(400, "This confirmation link is invalid, expired, or already used")
+
+    challenge.consumed_at = now
+    user.hashed_password = challenge.password_hash
+    user.token_version += 1
+    db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+    ).update({UserSession.revoked_at: now})
+    db.add(AuditLog(user=user.username, action="password_changed", target=None))
+    db.commit()
+
+    try:
+        subject, text, body = delivery.password_changed_email(user.full_name or user.username)
+        delivery.send_email(user.email, subject, text, body)
+    except delivery.DeliveryError:
+        log.exception("Password changed but confirmation notice could not be sent for user %s", user.id)
+
+    return MessageResponse(message="Your password was changed. Sign in again with the new password.")
+
+
+@router.get("/sessions", response_model=List[AccountSessionOut])
+def list_sessions(
+    user: User = Depends(get_current_user),
+    session_id: Optional[str] = Depends(get_access_session_id),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    sessions = db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+        UserSession.expires_at > now,
+    ).order_by(UserSession.created_at.desc()).all()
+    return [AccountSessionOut(
+        id=row.id,
+        user_agent=row.user_agent,
+        ip_address=row.ip_address,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        current=row.id == session_id,
+    ) for row in sessions]
+
+
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
+def revoke_session(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    session = db.query(UserSession).filter(
+        UserSession.id == session_id,
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+    ).first()
+    if session is None:
+        raise HTTPException(404, "Sign-in session not found")
+    session.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(AuditLog(user=user.username, action="session_revoked", target=session_id[:8]))
+    db.commit()
+    return MessageResponse(message="Sign-in session revoked")
 
 
 # ---------- verification ----------
@@ -437,6 +576,15 @@ def reset_password(payload: ResetPasswordRequest, request: Request, db: Session 
     user.hashed_password = get_password_hash(payload.new_password)
     user.token_version += 1                        # every old session / token dies now
     vs.invalidate_active(db, user.id, vs.PASSWORD_RESET)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+    ).update({UserSession.revoked_at: now})
+    db.query(PasswordChangeChallenge).filter(
+        PasswordChangeChallenge.user_id == user.id,
+        PasswordChangeChallenge.consumed_at.is_(None),
+    ).update({PasswordChangeChallenge.consumed_at: now})
     db.add(AuditLog(user=user.username, action="password_reset", target=None))
     db.commit()
     limiter.reset(f"login:fail:acct:{user.username.lower()}")
@@ -600,10 +748,7 @@ def phone_login_verify(payload: PhoneLoginVerify, request: Request, db: Session 
     if vs.verify_otp(db, user.id, vs.PHONE_LOGIN, payload.code) is not vs.OtpResult.ok:
         raise fail()
 
-    token = create_access_token(
-        data={"sub": user.username, "role": user.role.value, "tv": user.token_version},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
+    token = create_user_session(db, user, request)
     db.add(AuditLog(user=user.username, action="login_sms", target=None))
     db.commit()
     limiter.reset(acct_key)

@@ -1,5 +1,6 @@
+
 import json
-from typing import Any, Optional, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import redis
 
@@ -24,10 +25,6 @@ def cache_set(
     value: Any,
     ttl_seconds: int = 60,
 ) -> None:
-    """
-    Store a JSON-serializable value in Redis with an expiry time.
-    """
-
     if redis_client is None:
         return
 
@@ -39,10 +36,6 @@ def cache_set(
 
 
 def cache_get(key: str) -> Optional[Any]:
-    """
-    Retrieve a cached value from Redis and decode it from JSON.
-    """
-
     if redis_client is None:
         return None
 
@@ -55,14 +48,8 @@ def cache_get(key: str) -> Optional[Any]:
 
 
 def cache_delete(key: str) -> None:
-    """
-    Delete a cached value.
-    """
-
-    if redis_client is None:
-        return
-
-    redis_client.delete(key)
+    if redis_client is not None:
+        redis_client.delete(key)
 
 
 # ---------------------------------------------------------------------------
@@ -74,23 +61,16 @@ def rate_limit_check(
     max_attempts: int,
     window_seconds: int,
 ) -> bool:
-    """
-    Fixed-window rate limiter using Redis.
-
-    Uses a pipeline so INCR and EXPIRE are sent together.
-    """
-
     if redis_client is None:
         return True
 
     pipe = redis_client.pipeline(transaction=True)
-
     pipe.incr(key)
-    pipe.expire(key, window_seconds)
+    pipe.expire(key, window_seconds, nx=True)
 
     current_count, _ = pipe.execute()
 
-    return current_count <= max_attempts
+    return int(current_count) <= max_attempts
 
 
 # ---------------------------------------------------------------------------
@@ -101,19 +81,12 @@ def increment_and_get_count(
     key: str,
     ttl_seconds: int,
 ) -> int:
-    """
-    Increment a Redis counter and return its current value.
-
-    Kept for compatibility with the single-log Rule Engine API.
-    """
-
     if redis_client is None:
         return 0
 
     pipe = redis_client.pipeline(transaction=True)
-
     pipe.incr(key)
-    pipe.expire(key, ttl_seconds)
+    pipe.expire(key, ttl_seconds, nx=True)
 
     current_count, _ = pipe.execute()
 
@@ -121,66 +94,72 @@ def increment_and_get_count(
 
 
 # ---------------------------------------------------------------------------
-# BATCH COUNTERS
+# BATCH COUNTERS — COMPATIBILITY API
 # ---------------------------------------------------------------------------
 
 def increment_and_get_counts_batch(
     items: List[Tuple[str, int]],
 ) -> Dict[str, int]:
     """
-    Increment many Redis counters in one pipeline.
+    Increment counters using a single pipeline.
 
-    Args:
-        items:
-            List of:
-                (redis_key, ttl_seconds)
-
-    Returns:
-        Dictionary:
-            redis_key -> current counter value
-
-    Example:
-
-        increment_and_get_counts_batch(
-            [
-                ("corr:brute_force:10.0.0.1", 300),
-                ("corr:brute_force:10.0.0.2", 300),
-            ]
-        )
-
-    Instead of:
-
-        Redis request
-        Redis request
-        Redis request
-        ...
-
-    the counters are sent together using a Redis pipeline.
+    Returns the final count for each unique key. If a key appears multiple
+    times, its final count is returned once. Use the per-item API below
+    when individual results are needed.
     """
+    if not items:
+        return {}
 
-    if redis_client is None or not items:
-        return {
-            key: 0
-            for key, _ in items
-        }
+    if redis_client is None:
+        return {key: 0 for key, _ in items}
 
     pipe = redis_client.pipeline(transaction=False)
 
     for key, ttl_seconds in items:
         pipe.incr(key)
-        pipe.expire(key, ttl_seconds)
+        pipe.expire(key, ttl_seconds, nx=True)
 
     results = pipe.execute()
 
     counts: Dict[str, int] = {}
 
-    result_index = 0
-
-    for key, _ in items:
-        count = results[result_index]
-
-        counts[key] = int(count)
-
-        result_index += 2
+    for index, (key, _) in enumerate(items):
+        counts[key] = int(results[index * 2])
 
     return counts
+
+
+# ---------------------------------------------------------------------------
+# BATCH COUNTERS — PER-ITEM API
+# ---------------------------------------------------------------------------
+
+def increment_and_get_counts_batch_per_item(
+    items: List[Tuple[str, int]],
+) -> List[int]:
+    """
+    Increment each counter and return one result per input item, in order.
+
+    Duplicate keys are supported. Each result reflects the count immediately
+    after that item's increment, including earlier increments in this batch.
+
+    Note: this preserves counter semantics, but does not make a collection of
+    separate log events an exact timestamp-based sliding-window calculation.
+    """
+    if not items:
+        return []
+
+    if redis_client is None:
+        return [0] * len(items)
+
+    pipe = redis_client.pipeline(transaction=False)
+
+    for key, ttl_seconds in items:
+        pipe.incr(key)
+        pipe.expire(key, ttl_seconds, nx=True)
+
+    results = pipe.execute()
+
+    return [
+        int(results[index * 2])
+        for index in range(len(items))
+    ]

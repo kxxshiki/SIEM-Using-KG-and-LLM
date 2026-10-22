@@ -1,24 +1,18 @@
+
 """
 Rule Engine — Phase 4.
-
-Detects signature-based threats and threshold/correlation-based attacks.
-
-Supports:
-    - Single-log evaluation
-    - High-performance batch evaluation
-    - Redis pipeline-based threshold correlation
-    - MITRE ATT&CK mapping
-
-The batch API is used by the log-upload pipeline so large log files
-can be processed efficiently.
 """
 
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.core.redis_client import ( increment_and_get_count, increment_and_get_counts_batch,)
+from app.core.redis_client import (
+    increment_and_get_count,
+    increment_and_get_counts_batch,
+    increment_and_get_counts_batch_per_item,
+)
 from app.services import mitre_mapping_service
 
-# SIGNATURE RULES
+
 SIGNATURE_RULES: Dict[str, Dict[str, Any]] = {
     "brute_force": {
         "alert_type": "Brute Force Attempt",
@@ -62,8 +56,6 @@ SIGNATURE_RULES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# THRESHOLD / CORRELATION RULES
-
 THRESHOLD_RULES: Dict[str, Dict[str, Any]] = {
     "brute_force": {
         "count": 5,
@@ -77,23 +69,17 @@ THRESHOLD_RULES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# SCORE TO SEVERITY
 
 def score_to_severity(score: float) -> str:
-    """Convert numeric risk score into severity."""
-
+    """Convert a numeric risk score into a severity."""
     if score >= 85:
         return "critical"
-
     if score >= 65:
         return "high"
-
     if score >= 40:
         return "medium"
-
     return "low"
 
-# ALERT BUILDER
 
 def _build_alert(
     normalized: Dict[str, Any],
@@ -104,21 +90,18 @@ def _build_alert(
     rule_name: str,
     description: str,
 ) -> Dict[str, Any]:
-    """
-    Build the common alert structure.
-
-    MITRE mapping is resolved through the in-memory cache.
-    """
-
+    """Build the common alert structure."""
     event_type = normalized.get("event_type")
-    ip = normalized.get("ip_address")
+    signature = SIGNATURE_RULES.get(event_type)
 
-    signature = SIGNATURE_RULES[event_type]
+    if signature is None:
+        raise ValueError(
+            f"Cannot build an alert for unsupported event type: "
+            f"{event_type!r}"
+        )
 
     mitre_technique_fk = (
-        mitre_mapping_service.get_db_id_for_event_type(
-            event_type
-        )
+        mitre_mapping_service.get_db_id_for_event_type(event_type)
     )
 
     return {
@@ -128,71 +111,91 @@ def _build_alert(
         "severity": score_to_severity(base_score),
         "risk_score": float(base_score),
         "confidence": float(confidence),
-        "ip_address": ip,
+        "ip_address": normalized.get("ip_address"),
         "description": description,
         "mitre_technique_fk": mitre_technique_fk,
     }
 
-# SINGLE LOG EVALUATION
+
+def _make_description(
+    event_type: str,
+    ip: Optional[str],
+) -> str:
+    return (
+        f"Detected '{event_type}' pattern from {ip} "
+        "via signature matching."
+    )
+
+
+def _evaluate_threshold(
+    event_type: str,
+    ip: Optional[str],
+    count: int,
+) -> Tuple[Optional[float], Optional[float], str, Optional[str]]:
+    """Return escalation details when the threshold is reached."""
+    threshold_rule = THRESHOLD_RULES.get(event_type)
+
+    if not threshold_rule or not ip or ip == "0.0.0.0":
+        return None, None, "signature_match", None
+
+    if count < threshold_rule["count"]:
+        return None, None, "signature_match", None
+
+    signature = SIGNATURE_RULES[event_type]
+    confidence = min(signature["confidence"] + 0.15, 0.99)
+
+    description = (
+        f"{count} '{event_type}' events from {ip} within "
+        f"{threshold_rule['window_seconds']} seconds — "
+        "pattern confirmed, not a one-off."
+    )
+
+    return (
+        float(threshold_rule["escalated_score"]),
+        confidence,
+        "threshold_correlation",
+        description,
+    )
+
 
 def evaluate(
     normalized: Dict[str, Any],
     log_id: int,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Evaluate one normalized log entry.
-
-    Used for individual log processing and testing.
-    """
-
+    """Evaluate one normalized log entry."""
     event_type = normalized.get("event_type")
-
     signature = SIGNATURE_RULES.get(event_type)
 
-    if not signature:
+    if signature is None:
         return None
 
     ip = normalized.get("ip_address")
-
-    base_score = signature["base_score"]
-    confidence = signature["confidence"]
-
+    base_score = float(signature["base_score"])
+    confidence = float(signature["confidence"])
     rule_name = "signature_match"
-
-    description = (
-        f"Detected '{event_type}' pattern from {ip} "
-        f"via signature matching."
-    )
+    description = _make_description(event_type, ip)
 
     threshold_rule = THRESHOLD_RULES.get(event_type)
 
-    if (
-        threshold_rule
-        and ip
-        and ip != "0.0.0.0"
-    ):
+    if threshold_rule and ip and ip != "0.0.0.0":
         redis_key = f"corr:{event_type}:{ip}"
-
         count = increment_and_get_count(
             redis_key,
             threshold_rule["window_seconds"],
         )
 
-        if count >= threshold_rule["count"]:
-            base_score = threshold_rule["escalated_score"]
+        (
+            escalated_score,
+            escalated_confidence,
+            escalated_rule,
+            escalated_description,
+        ) = _evaluate_threshold(event_type, ip, count)
 
-            confidence = min(
-                confidence + 0.15,
-                0.99,
-            )
-
-            rule_name = "threshold_correlation"
-
-            description = (
-                f"{count} '{event_type}' events from {ip} within "
-                f"{threshold_rule['window_seconds']} seconds — "
-                f"pattern confirmed, not a one-off."
-            )
+        if escalated_score is not None:
+            base_score = escalated_score
+            confidence = escalated_confidence
+            rule_name = escalated_rule
+            description = escalated_description or description
 
     return _build_alert(
         normalized,
@@ -204,31 +207,16 @@ def evaluate(
     )
 
 
-# ---------------------------------------------------------------------------
-# BATCH EVALUATION
-# ---------------------------------------------------------------------------
-
 def evaluate_batch(
     rows: List[Dict[str, Any]],
     log_ids: List[int],
 ) -> List[Dict[str, Any]]:
     """
-    Evaluate a batch of normalized logs.
+    Evaluate normalized logs in a batch.
 
-    Performance design:
-
-        1. Signature matching happens in memory.
-        2. MITRE mapping uses the in-memory cache.
-        3. Threshold counters are collected first.
-        4. Redis counters are incremented through ONE pipeline.
-        5. Alerts are constructed after Redis results are available.
-        6. No PostgreSQL query is performed per log.
-
-    This is substantially more efficient than calling evaluate()
-    for every log because threshold correlation no longer requires
-    a separate Redis network round trip for every event.
+    Redis counters are incremented in a pipeline. Per-item counter results
+    preserve the individual increment count when multiple logs share a key.
     """
-
     if not rows:
         return []
 
@@ -237,129 +225,85 @@ def evaluate_batch(
             "rows and log_ids must contain the same number of items"
         )
 
-    alerts: List[Dict[str, Any]] = []
-
-    # -----------------------------------------------------------------------
-    # STEP 1
-    # Find signature matches and prepare Redis operations.
-    # -----------------------------------------------------------------------
-
-    matched_rows: List[
-        Tuple[
-            Dict[str, Any],
-            int,
-            Dict[str, Any],
-            Optional[str],
-        ]
-    ] = []
-
-    redis_items: List[Tuple[str, int]] = []
+    matched_rows = []
+    redis_items = []
 
     for row, log_id in zip(rows, log_ids):
-
         event_type = row.get("event_type")
-
         signature = SIGNATURE_RULES.get(event_type)
 
-        if not signature:
+        if signature is None:
             continue
 
         ip = row.get("ip_address")
-
+        threshold_rule = THRESHOLD_RULES.get(event_type)
         redis_key = None
 
-        threshold_rule = THRESHOLD_RULES.get(event_type)
-
-        if (
-            threshold_rule
-            and ip
-            and ip != "0.0.0.0"
-        ):
+        if threshold_rule and ip and ip != "0.0.0.0":
             redis_key = f"corr:{event_type}:{ip}"
-
             redis_items.append(
-                (
-                    redis_key,
-                    threshold_rule["window_seconds"],
-                )
+                (redis_key, threshold_rule["window_seconds"])
             )
 
-        matched_rows.append(
-            (
-                row,
-                log_id,
-                signature,
-                redis_key,
-            )
-        )
+        matched_rows.append((row, log_id, signature, redis_key))
 
     if not matched_rows:
         return []
 
-    # -----------------------------------------------------------------------
-    # STEP 2
-    # Batch Redis correlation.
-    # -----------------------------------------------------------------------
+    # Increment counters and preserve one result for each input item.
+    redis_counts = (
+        increment_and_get_counts_batch_per_item(redis_items)
+        if redis_items
+        else []
+    )
 
-    redis_counts = {}
+    # Map each row position to its individual counter result.
+    redis_count_by_row = {}
+    redis_index = 0
 
-    if redis_items:
-        redis_counts = increment_and_get_counts_batch(
-            redis_items
-        )
-
-    # -----------------------------------------------------------------------
-    # STEP 3
-    # Build alerts.
-    # -----------------------------------------------------------------------
-
-    for (
+    for row_index, (
         row,
         log_id,
         signature,
         redis_key,
-    ) in matched_rows:
+    ) in enumerate(matched_rows):
+        if redis_key is not None:
+            redis_count_by_row[row_index] = redis_counts[redis_index]
+            redis_index += 1
 
-        event_type = row.get("event_type")
+    alerts = []
+
+    for row_index, (
+        row,
+        log_id,
+        signature,
+        redis_key,
+    ) in enumerate(matched_rows):
+        event_type = row["event_type"]
         ip = row.get("ip_address")
 
-        base_score = signature["base_score"]
-        confidence = signature["confidence"]
-
+        base_score = float(signature["base_score"])
+        confidence = float(signature["confidence"])
         rule_name = "signature_match"
-
-        description = (
-            f"Detected '{event_type}' pattern from {ip} "
-            f"via signature matching."
-        )
+        description = _make_description(event_type, ip)
 
         threshold_rule = THRESHOLD_RULES.get(event_type)
 
-        if (
-            threshold_rule
-            and redis_key
-        ):
-            count = redis_counts.get(
-                redis_key,
-                0,
-            )
+        if threshold_rule and redis_key:
+            count = redis_count_by_row.get(row_index, 0)
 
-            if count >= threshold_rule["count"]:
+            (
+                escalated_score,
+                escalated_confidence,
+                escalated_rule,
+                escalated_description,
+            ) = _evaluate_threshold(event_type, ip, count)
 
-                base_score = threshold_rule["escalated_score"]
-
-                confidence = min(
-                    confidence + 0.15,
-                    0.99,
-                )
-
-                rule_name = "threshold_correlation"
-
-                description = (
-                    f"{count} '{event_type}' events from {ip} within "
-                    f"{threshold_rule['window_seconds']} seconds — "
-                    f"pattern confirmed, not a one-off."
-                )
+            if escalated_score is not None:
+                base_score = escalated_score
+                confidence = escalated_confidence
+                rule_name = escalated_rule
+                description = escalated_description or description
 
         alerts.append(
             _build_alert(

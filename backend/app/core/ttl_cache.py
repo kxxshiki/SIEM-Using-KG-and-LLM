@@ -1,3 +1,4 @@
+
 import threading
 import time
 from typing import Any, Callable, Dict, Tuple
@@ -7,22 +8,48 @@ _store: Dict[str, Tuple[float, Any]] = {}
 MAX_ENTRIES = 300
 
 
-def cached(key: str, ttl: float, builder: Callable[[], Any], force: bool = False) -> Any:
-    """Small in-memory cache. Works with or without Redis."""
+def cached(
+    key: str,
+    ttl: float,
+    builder: Callable[[], Any],
+    force: bool = False,
+) -> Any:
+    """Small thread-safe in-memory cache."""
     now = time.time()
-    if not force:
+
+    with _lock:
         hit = _store.get(key)
-        if hit and now - hit[0] < ttl:
+        if not force and hit and now - hit[0] < ttl:
             return hit[1]
+
     value = builder()
+
     with _lock:
         _store[key] = (time.time(), value)
+
         if len(_store) > MAX_ENTRIES:
-            for old in sorted(_store, key=lambda k: _store[k][0])[: len(_store) - MAX_ENTRIES]:
-                _store.pop(old, None)
+            oldest = sorted(_store, key=lambda k: _store[k][0])
+            for old_key in oldest[: len(_store) - MAX_ENTRIES]:
+                _store.pop(old_key, None)
+
     return value
 
 
+def invalidate(key: str) -> None:
+    """Invalidate one cache entry."""
+    with _lock:
+        _store.pop(key, None)
+
+
+def invalidate_prefix(prefix: str) -> None:
+    """Invalidate entries whose keys start with the given prefix."""
+    with _lock:
+        for key in list(_store):
+            if key.startswith(prefix):
+                _store.pop(key, None)
+
+
 def clear() -> None:
+    """Clear all cached entries."""
     with _lock:
         _store.clear()

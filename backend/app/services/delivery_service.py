@@ -125,3 +125,36 @@ def signup_code_email(code: str) -> Tuple[str, str, str]:
         "<p>If you did not request this, ignore this email.</p>"
     )
     return subject, text, body
+
+
+def password_change_confirmation_email(name: str, link: str) -> Tuple[str, str, str]:
+    subject = "Confirm your SIEM password change"
+    text = (
+        f"Hello {name},\n\nConfirm your password change: {link}\n"
+        "The link is valid for 15 minutes and works once. "
+        "Your password will not change until you confirm.\n\n"
+        "If you did not request this, ignore this email."
+    )
+    body = (
+        f"<p>Hello {html.escape(name)},</p>"
+        f'<p><a href="{html.escape(link)}">Confirm password change</a></p>'
+        "<p>The link is valid for 15 minutes and works once. "
+        "Your password will not change until you confirm.</p>"
+        "<p>If you did not request this, ignore this email.</p>"
+    )
+    return subject, text, body
+
+
+def password_changed_email(name: str) -> Tuple[str, str, str]:
+    subject = "Your SIEM password was changed"
+    text = (
+        f"Hello {name},\n\nYour SIEM account password was changed. "
+        "All existing sessions were signed out. If this was not you, "
+        "use Forgot password immediately."
+    )
+    body = (
+        f"<p>Hello {html.escape(name)},</p>"
+        "<p>Your SIEM account password was changed. All existing sessions were signed out.</p>"
+        "<p>If this was not you, use Forgot password immediately.</p>"
+    )
+    return subject, text, body

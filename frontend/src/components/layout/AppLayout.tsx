@@ -1,8 +1,8 @@
 import { Suspense, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  BarChart3, Bell, Bot, Database, FileText, Fingerprint, LayoutDashboard, LogOut, Menu,
-  MessageSquare, Moon, Settings, Shield, ShieldAlert, Sun, type LucideIcon,
+  Bell, FileText, LayoutDashboard, LogOut, Menu,
+  MessageSquare, Moon, Network, Shield, Sun, Upload, UserCheck, MailWarning, type LucideIcon,
 } from "lucide-react";
 import Brand from "@/components/Brand";
 import PageSkeleton from "@/components/PageSkeleton";
@@ -19,15 +19,14 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/analytics", label: "Analytics", icon: BarChart3, end: false },
-  { to: "/threats", label: "Threats", icon: ShieldAlert, end: false },
-  { to: "/sources", label: "Sources", icon: Database, end: false },
-  { to: "/reports", label: "Reports", icon: FileText, end: false },
-  { to: "/indicators", label: "Indicators", icon: Fingerprint, end: false },
+  { to: "/upload-logs", label: "Upload Logs", icon: Upload, end: false },
   { to: "/alerts", label: "Alerts", icon: Bell, end: false },
-  { to: "/socco-pilot", label: "Socco-Pilot", icon: Bot, end: false },
-  { to: "/settings", label: "Settings", icon: Settings, end: false },
+  { to: "/spam", label: "Spam", icon: MailWarning, end: false },
+  { to: "/reports", label: "Reports", icon: FileText, end: false },
+  { to: "/threat-graph", label: "Graph Visulation", icon: Network, end: false },
+  { to: "/settings", label: "Account Preference", icon: UserCheck, end: false },
   { to: "/feedback", label: "Feedback", icon: MessageSquare, end: false },
+  { to: "/notifications", label: "Notification", icon: Bell, end: false },
 ];
 
 export default function AppLayout() {
@@ -108,7 +107,7 @@ export default function AppLayout() {
         )}
       >
         <p className="px-5 pb-2 pt-5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Navigation
+          NAVIGATION
         </p>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3">
           {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
@@ -138,12 +137,12 @@ export default function AppLayout() {
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-500 transition-colors hover:bg-red-500/10"
           >
             <LogOut size={16} />
-            Sign out
+            Logout
           </button>
         </div>
       </aside>
 
-      {/* Page content. The header and sidebar appear at once; the page fills in. */}
+      {/* Page content */}
       <main className="pt-14">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
           <Suspense fallback={<PageSkeleton />}>

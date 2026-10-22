@@ -3,8 +3,10 @@ let started = false;
 export function prefetchApp(): void {
   if (started) return;
   started = true;
+  // Start the dashboard chunk while the user enters credentials so the route
+  // is ready as soon as the login request completes.
+  void import("@/pages/Dashboard");
   const load = () => {
-    void import("@/pages/Dashboard");
     void import("@/pages/Alerts");
     void import("@/pages/UploadLogs");
   };

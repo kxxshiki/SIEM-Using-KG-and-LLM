@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Moon, Sun } from "lucide-react";
 
 import { useTheme } from "@/context/ThemeContext";
-
+import ParticleNetworkBackground from "@/components/auth/ParticleNetworkBackground"; // <-- Import it here
 
 interface Props {
   title: string;
@@ -24,7 +24,9 @@ export default function AuthShell({
 
   return (
     <div className="auth-page relative min-h-screen overflow-hidden">
-      
+      {/* Render the interactive plexus background here */}
+      <ParticleNetworkBackground />
+
       <div className="absolute right-4 top-4 z-20 flex gap-2">
         <button
           type="button"
@@ -60,7 +62,7 @@ export default function AuthShell({
           </p>
         </section>
 
-        <section className="w-full max-w-md justify-self-center rounded-2xl bg-background/70 p-6 lg:justify-self-end">
+        <section className="w-full max-w-md justify-self-center rounded-2xl bg-background/70 backdrop-blur-md p-6 lg:justify-self-end shadow-xl border border-border/50">
           <p className="font-serif text-sm font-semibold uppercase tracking-wider">
             SentinelSIEM
           </p>

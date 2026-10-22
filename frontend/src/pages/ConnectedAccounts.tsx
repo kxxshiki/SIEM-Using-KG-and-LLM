@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createLinkTicket, getOAuthProviders, listIdentities, oauthStartUrl, toProblem,
@@ -54,6 +55,9 @@ export default function ConnectedAccounts() {
 
   return (
     <div className="max-w-xl space-y-4">
+      <Link to="/settings" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft size={16} /> Account preferences
+      </Link>
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Connected accounts</h1>
         <p className="text-sm text-muted-foreground">

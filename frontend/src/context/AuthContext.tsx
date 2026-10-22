@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import axios from "axios";
-import { api, TOKEN_KEY } from "@/lib/api";
+import { api, AUTH_REQUEST_TIMEOUT_MS, TOKEN_KEY } from "@/lib/api";
 import { clearQueryCache } from "@/lib/queryCache";
 import type { LoginResponse, User } from "@/types";
 
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     api
-      .get<User>("/auth/me")
+      .get<User>("/auth/me", { timeout: AUTH_REQUEST_TIMEOUT_MS })
       .then((res) => {
         setUser(res.data);
         remember(res.data);
@@ -79,7 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const body = new URLSearchParams();
     body.append("username", username);
     body.append("password", password);
-    const res = await api.post<LoginResponse>("/auth/login", body);
+    const res = await api.post<LoginResponse>("/auth/login", body, {
+      timeout: AUTH_REQUEST_TIMEOUT_MS,
+    });
     clearQueryCache(); // a fresh sign-in starts with empty pages
     localStorage.setItem(TOKEN_KEY, res.data.access_token);
     remember(res.data);

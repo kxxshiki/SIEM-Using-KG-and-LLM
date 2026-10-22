@@ -140,3 +140,33 @@ class AuthOptions(BaseModel):
     google: bool
     github: bool
     phone_login: bool
+
+
+class PasswordChangeRequest(BaseModel):
+    email: EmailStr
+    new_password: str = Field(min_length=1, max_length=128)
+    confirm_password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _password_change_email_lower(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @model_validator(mode="after")
+    def _passwords_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class PasswordChangeConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+
+
+class AccountSessionOut(BaseModel):
+    id: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: datetime
+    expires_at: datetime
+    current: bool = False

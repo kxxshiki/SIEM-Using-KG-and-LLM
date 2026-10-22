@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { api } from "@/lib/api";
+import { api, AUTH_REQUEST_TIMEOUT_MS } from "@/lib/api";
 import type { LoginResponse } from "@/types";
 
 export type NextStep = "verify_email" | "verify_phone" | "awaiting_approval" | "done";
@@ -62,8 +62,11 @@ let verificationToken: string | null = null;
 export function setVerificationToken(token: string | null): void {
   verificationToken = token;
 }
+export function getVerificationToken(): string | null {
+  return verificationToken;
+}
 export function hasVerificationToken(): boolean {
-  return verificationToken !== null;
+  return getVerificationToken() !== null;
 }
 function verificationHeaders(): Record<string, string> {
   return verificationToken ? { Authorization: `Bearer ${verificationToken}` } : {};
@@ -94,11 +97,11 @@ export function toProblem(
   if (!e.response) {
     return {
       status: 0,
-      code: "network",
+      code: e.code === "ECONNABORTED" ? "timeout" : "network",
       message:
         e.code === "ECONNABORTED"
-          ? "The server took too long to respond. Please try again."
-          : "Cannot reach the server. Check your connection and try again.",
+          ? "Server error: the request timed out. Please try again."
+          : "Network error: cannot reach the server. Check your connection and try again.",
     };
   }
 
@@ -132,14 +135,24 @@ export function toProblem(
     message = `Too many attempts. ${
       retryAfter ? `Try again in ${formatWait(retryAfter)}.` : "Try again later."
     }`;
-  } else if (status >= 500 && status !== 503) {
-    message = "The server had a problem. Please try again later.";
+  } else if (status >= 500) {
+    message = "Server error: the request could not be completed. Please try again shortly.";
   }
 
   return { status, code, message, retryAfter, detail: extra };
 }
 
 // ---------- registration and verification ----------
+export async function loginAccount(username: string, password: string): Promise<LoginResponse> {
+  const body = new URLSearchParams();
+  body.set("username", username);
+  body.set("password", password);
+  const res = await client.post<LoginResponse>("/auth/login", body, {
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
+  });
+  return res.data;
+}
+
 export async function registerAccount(input: RegisterInput): Promise<RegisterResult> {
   const res = await client.post<RegisterResult>("/auth/register", input);
   return res.data;
@@ -294,5 +307,38 @@ export async function createLinkTicket(provider: OAuthProvider): Promise<string>
 
 export async function listIdentities(): Promise<OAuthIdentity[]> {
   const res = await api.get<OAuthIdentity[]>("/auth/oauth/identities");
+  return res.data;
+}
+
+export interface AccountSession {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  created_at: string;
+  expires_at: string;
+  current: boolean;
+}
+
+export async function requestPasswordChange(input: {
+  email: string;
+  new_password: string;
+  confirm_password: string;
+}): Promise<MessageResult> {
+  const res = await api.post<MessageResult>("/auth/password-change/request", input);
+  return res.data;
+}
+
+export async function confirmPasswordChange(token: string): Promise<MessageResult> {
+  const res = await client.post<MessageResult>("/auth/password-change/confirm", { token });
+  return res.data;
+}
+
+export async function listAccountSessions(): Promise<AccountSession[]> {
+  const res = await api.get<AccountSession[]>("/auth/sessions");
+  return res.data;
+}
+
+export async function revokeAccountSession(sessionId: string): Promise<MessageResult> {
+  const res = await api.delete<MessageResult>(`/auth/sessions/${encodeURIComponent(sessionId)}`);
   return res.data;
 }

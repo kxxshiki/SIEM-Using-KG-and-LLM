@@ -19,9 +19,12 @@ from app.models.mitre_technique import MitreTechnique  # noqa: F401
 from app.models.signup_email_code import SignupEmailCode  # noqa: F401
 from app.models.oauth_identity import OAuthIdentity  # noqa: F401
 from app.models.upload import Upload  # noqa: F401
+from app.models.user_session import UserSession  # noqa: F401
+from app.models.password_change_challenge import PasswordChangeChallenge  # noqa: F401
+from app.models.feedback import Feedback  # noqa: F401
 
 # API routers
-from app.api.v1 import (auth,auth_otp,oauth,logs,alerts,ml,mitre,graph,dashboard,ai,data_status,)
+from app.api.v1 import (auth,auth_otp,oauth,logs,alerts,ml,mitre,graph,dashboard,ai,data_status,feedback,)
 from app.core.security import get_password_hash
 from app.services import mitre_mapping_service, oauth_service
 from app.graph import graph_schema
@@ -70,6 +73,7 @@ app.include_router(graph.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(data_status.router, prefix="/api/v1")
 app.include_router(ai.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
 
 
 def _seed_dev_users(db) -> None:

@@ -2,6 +2,9 @@ import axios from "axios";
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
 export const TOKEN_KEY = "siem-token";
+// Login includes password verification and database writes; a one-second
+// cutoff falsely reports a server failure on cold or busy connections.
+export const AUTH_REQUEST_TIMEOUT_MS = 15000;
 
 export const api = axios.create({ baseURL: API_URL });
 

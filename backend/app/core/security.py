@@ -1,8 +1,9 @@
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.postgres import get_db
 from app.ml.models.user import User, UserStatus
+from app.models.user_session import UserSession
 
 
 # Argon2id for new hashes; existing bcrypt hashes remain supported.
@@ -80,6 +82,26 @@ def create_access_token(
     )
 
 
+def create_user_session(db: Session, user: User, request: Request) -> str:
+    """Persist a login session and return its signed access token."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    session_id = secrets.token_urlsafe(32)
+    db.add(UserSession(
+        id=session_id,
+        user_id=user.id,
+        user_agent=(request.headers.get("user-agent") or "")[:512] or None,
+        ip_address=request.client.host if request.client else None,
+        created_at=now.replace(tzinfo=None),
+        expires_at=expires_at.replace(tzinfo=None),
+    ))
+    return create_access_token(
+        data={"sub": user.username, "role": user.role.value,
+              "tv": user.token_version, "sid": session_id},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+
+
 def create_verification_token(user: User) -> str:
     """Create a short-lived token for verification endpoints only."""
     now = _now()
@@ -130,6 +152,17 @@ def get_current_user(
     user = db.execute(
         select(User).where(User.username == username)
     ).scalar_one_or_none()
+
+    session_id = payload.get("sid")
+    if session_id is not None:
+        if user is None:
+            raise _unauthorized()
+        session = db.get(UserSession, session_id)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if session is None or session.user_id != user.id:
+            raise _unauthorized()
+        if session.revoked_at is not None or session.expires_at <= now:
+            raise _unauthorized()
 
     if (
         user is None
@@ -186,6 +219,11 @@ def get_session_started(
         raise _unauthorized()
 
     raise _unauthorized()
+
+
+def get_access_session_id(token: str = Depends(oauth2_scheme)) -> Optional[str]:
+    session_id = _decode(token).get("sid")
+    return session_id if isinstance(session_id, str) else None
 
 
 def get_verifying_user(

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const METRICS = ["Total logs", "Total alerts", "Threats today", "Critical open", "Confirmed threats"];
+const METRICS = ["Logs Uploaded", "Active alerts", "Threats today", "Critical open", "Confirmed threats"];
 const PANELS = [
   "Threat trend", "Attack types", "Log volume", "Alert status",
   "Top threat source IPs", "Top source countries",

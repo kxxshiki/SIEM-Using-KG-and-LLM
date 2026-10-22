@@ -12,7 +12,7 @@ from app.core import limiter
 from app.core.phone import normalize_phone_for_login
 from app.core.security import (
     DUMMY_HASH,
-    create_access_token,
+    create_user_session,
     verify_and_update,
     verify_password,
 )
@@ -350,16 +350,7 @@ def finish_login(
     ):
         raise HTTPException(403, "This account cannot sign in")
 
-    token = create_access_token(
-        data={
-            "sub": user.username,
-            "role": user.role.value,
-            "tv": user.token_version,
-        },
-        expires_delta=timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        ),
-    )
+    token = create_user_session(db, user, request)
 
     db.add(
         AuditLog(

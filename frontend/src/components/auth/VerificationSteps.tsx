@@ -7,7 +7,9 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 interface VerificationStepsProps {
-  verificationToken: string;
+  verificationToken?: string;
+  /** Compact progress indicator used by the current verification page. */
+  current?: number;
   emailVerified?: boolean;
   phoneVerified?: boolean;
   onComplete?: () => void;
@@ -23,7 +25,8 @@ type VerificationStatus = {
 };
 
 export default function VerificationSteps({
-  verificationToken,
+  verificationToken = "",
+  current,
   emailVerified = false,
   phoneVerified = false,
   onComplete,
@@ -38,6 +41,25 @@ export default function VerificationSteps({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<VerificationStatus | null>(null);
+
+  if (current !== undefined) {
+    const steps = ["Verify email", "Verify phone", "Account review"];
+    return (
+      <ol aria-label="Account verification steps" className="mb-5 grid grid-cols-3 gap-2">
+        {steps.map((label, index) => {
+          const number = index + 1;
+          const complete = number < current;
+          const active = number === current;
+          return (
+            <li key={label} aria-current={active ? "step" : undefined} className="flex items-center gap-2 text-xs">
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${complete || active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{complete ? "✓" : number}</span>
+              <span className={active ? "font-semibold text-foreground" : "text-muted-foreground"}>{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
 
   async function apiRequest<T>(
     path: string,

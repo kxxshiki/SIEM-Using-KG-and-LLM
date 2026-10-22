@@ -1,10 +1,4 @@
-"""
-Dashboard summary endpoint.
 
-It only counts data from the uploads the signed-in user may see (app/core/scope.py),
-so a fresh sign-in starts empty and costs one tiny query. Results are cached in memory
-for SUMMARY_CACHE_SECONDS. This works with or without Redis.
-"""
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 

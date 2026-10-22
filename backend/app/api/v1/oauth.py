@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core import limiter
-from app.core.security import create_access_token, get_current_user, get_password_hash
+from app.core.security import create_user_session, get_current_user, get_password_hash
 from app.db.postgres import get_db
 from app.ml.models.audit_log import AuditLog
 from app.ml.models.user import User, UserRole, UserStatus
@@ -268,10 +268,7 @@ def exchange(payload: TokenRequest, request: Request, db: Session = Depends(get_
     if user is None or user.status != UserStatus.active.value:
         db.rollback()
         raise HTTPException(403, "This account cannot sign in")
-    token = create_access_token(
-        data={"sub": user.username, "role": user.role.value, "tv": user.token_version},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
+    token = create_user_session(db, user, request)
     db.commit()
     return Token(access_token=token, username=user.username, role=user.role)
 
